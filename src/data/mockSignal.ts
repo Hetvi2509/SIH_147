@@ -1,5 +1,5 @@
-﻿// ============================================================
-// Mock Signal Data â€” QPSK Demo Scenario
+// ============================================================
+// Mock Signal Data — QPSK Demo Scenario
 // All values are internally consistent for a QPSK signal.
 // ============================================================
 
@@ -26,7 +26,7 @@ function gauss(mean = 0, std = 1): number {
 
 // ---------------------------------------------------------------
 // Spectrum / FFT Data (QPSK signal at 2.45 MHz center)
-// Shape: sincÂ² envelope + noise floor
+// Shape: sinc² envelope + noise floor
 // ---------------------------------------------------------------
 export function generateSpectrumData(numPoints = 512): SpectrumPoint[] {
   const data: SpectrumPoint[] = [];
@@ -185,8 +185,8 @@ export function generateConstellationData(numPoints = 1500): ConstellationPoint[
 }
 
 // ---------------------------------------------------------------
-// Waterfall / Spectrogram Data (2D: time Ã— frequency)
-// Returns a flat array of power values [time_bins Ã— freq_bins]
+// Waterfall / Spectrogram Data (2D: time × frequency)
+// Returns a flat array of power values [time_bins × freq_bins]
 // ---------------------------------------------------------------
 export function generateWaterfallData(
   timeBins = 100,

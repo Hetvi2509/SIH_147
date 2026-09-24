@@ -1,226 +1,222 @@
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, FileText, Activity } from 'lucide-react';
-import { useAnalysis } from '../context/AnalysisContext';
-import StatusCards from '../components/dashboard/StatusCards';
-import PipelineStepper from '../components/dashboard/PipelineStepper';
-import VisualizationWorkspace from '../components/visualization/VisualizationWorkspace';
-import ParameterCard from '../components/common/ParameterCard';
-import StatusBadge from '../components/common/StatusBadge';
+import { toast } from 'sonner';
 import {
-  formatCFO, formatPhase, formatSNR, formatSampleRate,
-  formatFileSize, formatSamples, formatDuration, formatBER
-} from '../utils/formatters';
+  CaretRight, DownloadSimple, WarningCircle,
+} from '@phosphor-icons/react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Progress } from '@/components/ui/progress';
+import { Separator } from '@/components/ui/separator';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { useAnalysis } from '@/context/AnalysisContext';
+import FileSection from '@/components/dashboard/FileSection';
+import PageHeader from '@/components/common/PageHeader';
+import SectionHeading from '@/components/common/SectionHeading';
+import StatusPill from '@/components/common/StatusPill';
+import Stat from '@/components/common/Stat';
+import InstrumentPanel from '@/components/common/Instrument';
+import Timeline, { type Step } from '@/components/common/Timeline';
+import AnalysisGrid from '@/components/visualization/AnalysisGrid';
+import RecoveredDataPanel from '@/components/bitstream/RecoveredDataPanel';
+import CorrelationPanel from '@/components/bitstream/CorrelationPanel';
+import { formatBER, formatCFO, formatPhase, formatSampleRate, formatSamples } from '@/utils/formatters';
+import { cn } from '@/lib/utils';
+
+const SNR_LABEL = ['Poor', 'Fair', 'Good', 'Very good', 'Excellent'];
 
 export default function DashboardPage() {
-  const { state, runAnalysis } = useAnalysis();
+  const { state, exportCSV, exportJSON, exportPDF } = useAnalysis();
   const navigate = useNavigate();
-  const { fileMetadata: meta, parameters: p, classification: cls, ber, pipeline, overallStatus } = state;
-  const isAnalyzing = overallStatus === 'analyzing';
+  const { fileMetadata: meta, parameters: p, classification: cls, sync, demodulation: demod, fec, interleaver, ber, bitStream: bs, pipeline, overallStatus } = state;
+
+  const done = pipeline.filter((s) => s.status === 'completed').length;
+  const totalMs = pipeline.reduce((t, s) => t + (s.status === 'completed' ? s.duration ?? 0 : 0), 0);
+  const snrLevel = p ? Math.max(1, Math.min(5, Math.ceil(p.snr / 5))) : 0;
+  const low = cls ? cls.confidence < 70 : false;
+
+  const status =
+    overallStatus === 'completed' ? { v: 'success' as const, l: 'Analysis complete' } :
+    overallStatus === 'analyzing' ? { v: 'active' as const, l: 'Analyzing' } :
+    overallStatus === 'error'     ? { v: 'error' as const, l: 'Analysis failed' } :
+                                    { v: 'muted' as const, l: meta ? 'Not analyzed' : 'No signal' };
+
+  const results = [
+    { to: '/modulation',      name: 'Modulation',          value: cls ? `${cls.modulation} · ${cls.confidence.toFixed(1)}%` : 'Pending' },
+    { to: '/synchronization', name: 'Synchronization',     value: sync ? (sync.carrierLocked && sync.timingLocked ? 'Carrier and timing locked' : 'Lock failed') : 'Pending' },
+    { to: '/demodulation',    name: 'Demodulation',        value: demod ? `${demod.status[0].toUpperCase()}${demod.status.slice(1)} · ${formatSamples(demod.recoveredBits)} bits` : 'Pending' },
+    { to: '/fec',             name: 'FEC / Interleaver',   value: fec ? (fec.detected ? `${fec.family} ${fec.codeRate}${interleaver?.detected ? ` · ${interleaver.type} interleaver` : ''}` : 'No FEC detected') : 'Pending' },
+    { to: '/bitstream',       name: 'Bit Stream Analysis', value: bs ? `${formatSamples(bs.recovered.totalBits)} bits · ρ ${bs.correlation.score.toFixed(2)}` : 'Pending' },
+    { to: '/report',          name: 'Report',              value: overallStatus === 'completed' ? 'Ready to export' : 'Pending' },
+  ];
+
+  const exportWith = (fn: () => Promise<void>, label: string) => () => {
+    toast.promise(fn(), { loading: `Preparing ${label}…`, success: `${label} downloaded`, error: `${label} export failed` });
+  };
 
   return (
-    <div className="page">
-      {/* Page header */}
-      <div className="page-header">
-        <div>
-          <div className="page-title">Dashboard</div>
-          <div className="page-subtitle">Overview — pipeline status, parameters, signal preview</div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {overallStatus === 'completed' && (
-            <StatusBadge status="completed" label="Analysis complete" />
-          )}
-          {overallStatus === 'analyzing' && (
-            <StatusBadge status="processing" label="Analyzing..." />
-          )}
-          {(overallStatus === 'idle' || overallStatus === 'uploading') && (
-            <StatusBadge status="idle" label="No analysis yet" />
-          )}
-          {overallStatus === 'error' && (
-            <StatusBadge status="error" label="Analysis failed" />
-          )}
-        </div>
-      </div>
+    <div className="pb-8">
+      <PageHeader title="Dashboard" description="Signal identity, classification result and how far the pipeline has got." />
 
-      {/* File info row — not a giant hero card */}
-      {meta ? (
-        <div className="card card-sm" style={{ marginBottom: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
-            {/* Left: file identity */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <FileText size={14} style={{ color: 'var(--blue)', flexShrink: 0 }} />
-              <div>
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.88rem', color: 'var(--text-primary)', fontWeight: 500 }}>
-                  {meta.fileName}
-                </span>
-                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginLeft: 10 }}>
-                  {meta.fileType} · {meta.format} · {formatFileSize(meta.fileSize)}
-                </span>
+      <div className="space-y-4">
+        <FileSection />
+
+        {state.error && (
+          <div className="flex items-start gap-2.5 rounded-xl bg-destructive/8 px-4 py-3 text-[14px] text-destructive">
+            <WarningCircle weight="fill" className="mt-0.5 size-4 shrink-0" /> {state.error}
+          </div>
+        )}
+
+        {/* Result: one row, most important first */}
+        <Card className="gap-0 py-0">
+          <div className="grid divide-border md:grid-cols-2 md:divide-x xl:grid-cols-[1.2fr_.9fr_.9fr_.9fr_1fr_1.4fr] [&>*]:px-5 [&>*]:py-5 max-md:divide-y max-xl:[&>*:nth-child(n+3)]:border-t max-xl:[&>*:nth-child(n+3)]:border-border">
+            <div>
+              <div className="label-caps">Detected modulation</div>
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <span className="display-num text-[44px] leading-none">{cls?.modulation ?? '—'}</span>
+                {cls && <Badge variant="soft">{cls.family} family</Badge>}
               </div>
             </div>
 
-            {/* Right: key file metrics + action */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-              <div style={{ display: 'flex', gap: 16, fontSize: '0.73rem', fontFamily: 'var(--font-mono)' }}>
-                <span style={{ color: 'var(--text-muted)' }}>fs <span style={{ color: 'var(--text-secondary)' }}>{formatSampleRate(meta.sampleRate)}</span></span>
-                <span style={{ color: 'var(--text-muted)' }}>n <span style={{ color: 'var(--text-secondary)' }}>{formatSamples(meta.numSamples)}</span></span>
-                <span style={{ color: 'var(--text-muted)' }}>T <span style={{ color: 'var(--text-secondary)' }}>{formatDuration(meta.duration)}</span></span>
+            <Stat label="Confidence" value={cls ? cls.confidence.toFixed(1) : '—'} unit={cls ? '%' : undefined} size="lg">
+              <Progress value={cls?.confidence ?? 0} className="mt-3 h-1" />
+            </Stat>
+
+            <Stat label="SNR" value={p ? p.snr.toFixed(1) : '—'} unit={p ? 'dB' : undefined} size="lg">
+              <div className="mt-3 flex gap-1" aria-label={p ? `Signal quality: ${SNR_LABEL[snrLevel - 1]}` : undefined}>
+                {[1, 2, 3, 4, 5].map((n) => <span key={n} className={cn('h-1 flex-1 rounded-full', n <= snrLevel ? 'bg-primary' : 'bg-secondary')} />)}
               </div>
-              <button
-                className="btn btn-primary btn-sm"
-                onClick={runAnalysis}
-                disabled={isAnalyzing}
-              >
-                {isAnalyzing ? '⚙ Analyzing...' : '▶ Analyze'}
-              </button>
+            </Stat>
+
+            <Stat label="Inference" value={cls ? cls.inferenceTimeMs : '—'} unit={cls ? 'ms' : undefined} size="lg" />
+
+            <div>
+              <div className="text-[13px] text-muted-foreground">Status</div>
+              <div className="mt-2.5"><StatusPill variant={status.v}>{status.l}</StatusPill></div>
+              {low && <div className="mt-2 text-[12.5px] text-warning">Low confidence</div>}
+            </div>
+
+            <div>
+              <div className="text-[13px] text-muted-foreground">Bit error rate</div>
+              {ber ? (
+                <dl className="mt-2 space-y-1 whitespace-nowrap">
+                  <div className="flex items-baseline justify-between gap-4">
+                    <dt className="text-[12.5px] text-muted-foreground">Before FEC</dt>
+                    <dd className="tnum text-[15px] text-muted-foreground">{formatBER(ber.berBeforeFEC)}</dd>
+                  </div>
+                  <div className="flex items-baseline justify-between gap-4">
+                    <dt className="text-[12.5px] text-muted-foreground">After FEC</dt>
+                    <dd className="display-num text-[24px] text-success">{ber.berAfterFEC != null ? formatBER(ber.berAfterFEC) : 'N/A'}</dd>
+                  </div>
+                </dl>
+              ) : <div className="display-num mt-1.5 text-[28px]">—</div>}
             </div>
           </div>
-        </div>
-      ) : (
-        <div className="card card-sm" style={{ marginBottom: 12, textAlign: 'center', padding: '28px 20px' }}>
-          <div style={{ color: 'var(--text-muted)', marginBottom: 8, fontSize: '0.85rem' }}>No signal loaded</div>
-          <button className="btn btn-primary btn-sm" onClick={() => navigate('/upload')}>
-            Upload .IQ / .WAV file
-          </button>
-        </div>
-      )}
+        </Card>
 
-      {/* Error banner */}
-      {state.error && (
-        <div style={{
-          padding: '10px 14px', marginBottom: 12,
-          background: 'rgba(239,83,80,0.08)',
-          border: '1px solid rgba(239,83,80,0.3)',
-          borderRadius: 'var(--radius-md)',
-          fontSize: '0.82rem', color: 'var(--color-error)',
-          display: 'flex', gap: 8, alignItems: 'flex-start',
-        }}>
-          <span style={{ flexShrink: 0 }}>⚠</span>
-          <span>{state.error}</span>
-        </div>
-      )}
+        {/* Parameters + progress */}
+        <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+          {p ? (
+            <InstrumentPanel
+              title="Signal parameters"
+              action={<Button variant="ghost" size="sm" onClick={() => navigate('/parameters')}>All parameters <CaretRight /></Button>}
+              groups={[
+                { title: 'RF', rows: [
+                  ['Center frequency', `${p.centerFrequency.toFixed(3)} MHz`],
+                  ['Bandwidth', `${p.bandwidth.toFixed(1)} kHz`],
+                  ['Carrier offset', formatCFO(p.cfo)],
+                ]},
+                { title: 'Timing', rows: [
+                  ['Sample rate', formatSampleRate(meta?.sampleRate ?? p.sampleRate)],
+                  ['Symbol rate', `${p.symbolRate} kSym/s`],
+                ]},
+                { title: 'Signal quality', rows: [
+                  ['SNR', `${p.snr.toFixed(1)} dB`],
+                  ['EVM', `${p.evm.toFixed(1)} %`],
+                  ['Phase offset', formatPhase(p.phaseOffset)],
+                ]},
+              ]}
+            />
+          ) : (
+            <Card><CardHeader><CardTitle>Signal parameters</CardTitle></CardHeader><CardContent><p className="py-4 text-[14px] text-muted-foreground">Parameters appear here once the signal has been analyzed.</p></CardContent></Card>
+          )}
 
-      {/* Stage status overview */}
-      <div style={{ marginBottom: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 }}>
-          <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', fontWeight: 600 }}>
-            Analysis Stages
-          </span>
-          <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-            {overallStatus === 'completed' ? '8 / 8 complete' : `${pipeline.filter(s => s.status === 'completed').length} / ${pipeline.length} complete`}
-          </span>
-        </div>
-        <StatusCards />
-      </div>
-
-      {/* Pipeline */}
-      <div className="card card-sm" style={{ marginBottom: 12 }}>
-        <div className="card-header">
-          <span className="card-title">Processing Pipeline</span>
-          <StatusBadge
-            status={overallStatus === 'completed' ? 'completed' : overallStatus === 'analyzing' ? 'processing' : 'idle'}
-            label={overallStatus === 'completed' ? '8 stages OK' : overallStatus === 'analyzing' ? 'Running' : 'Idle'}
-            size="sm"
+          <Timeline
+            title="Processing progress"
+            meta={`${done}/${pipeline.length} · ${totalMs} ms`}
+            steps={pipeline.map((s): Step => ({
+              name: s.name,
+              status: s.status === 'completed' ? 'done' : s.status === 'processing' ? 'running' : s.status === 'failed' ? 'failed' : s.status === 'warning' ? 'warning' : 'pending',
+              time: s.status === 'completed' && s.duration !== undefined ? `${s.duration} ms` : s.status === 'processing' ? 'running' : undefined,
+            }))}
           />
         </div>
-        <PipelineStepper stages={pipeline} />
       </div>
 
-      {/* Two-column: params + quick result */}
-      {p && (
-        <div className="grid-2" style={{ marginBottom: 12 }}>
-          {/* Parameters */}
-          <div className="card card-sm">
-            <div className="card-header">
-              <span className="card-title">Key Parameters</span>
-              <button className="btn btn-ghost btn-sm" onClick={() => navigate('/parameters')}>
-                All params <ArrowRight size={10} />
-              </button>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 14px' }}>
-              {[
-                { k: 'Center Freq',   v: `${p.centerFrequency.toFixed(3)} MHz`, hi: true },
-                { k: 'Sample Rate',   v: meta ? formatSampleRate(meta.sampleRate) : '--' },
-                { k: 'Bandwidth',     v: `${p.bandwidth.toFixed(1)} kHz` },
-                { k: 'Symbol Rate',   v: `${p.symbolRate} kSym/s` },
-                { k: 'SNR',           v: formatSNR(p.snr),   color: 'var(--green)' },
-                { k: 'CFO',           v: formatCFO(p.cfo),   color: 'var(--amber)' },
-                { k: 'Phase Offset',  v: formatPhase(p.phaseOffset), color: 'var(--amber)' },
-                { k: 'EVM',          v: `${p.evm.toFixed(1)}% rms` },
-              ].map(({ k, v, hi, color }) => (
-                <div key={k} style={{ borderBottom: '1px solid var(--border-faint)', paddingBottom: 5 }}>
-                  <div style={{ fontSize: '0.6rem', textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)', marginBottom: 1 }}>{k}</div>
-                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.84rem', fontWeight: hi ? 500 : 400, color: color ?? (hi ? 'var(--text-bright)' : 'var(--text-primary)') }}>{v}</div>
-                </div>
-              ))}
-            </div>
-          </div>
+      <section className="mt-10">
+        <SectionHeading
+          title="Signal analysis workspace"
+          action={<Button variant="ghost" size="sm" onClick={() => navigate('/visualizations')}>All views <CaretRight /></Button>}
+        />
+        <AnalysisGrid />
+      </section>
 
-          {/* Results summary */}
-          <div className="card card-sm">
-            <div className="card-header">
-              <span className="card-title">Classification Result</span>
-              {cls && (
-                <button className="btn btn-ghost btn-sm" onClick={() => navigate('/modulation')}>
-                  Detail <ArrowRight size={10} />
-                </button>
-              )}
-            </div>
-            {cls ? (
-              <>
-                <div style={{ marginBottom: 14 }}>
-                  <div style={{ fontSize: '0.6rem', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: 3 }}>Detected</div>
-                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: '2rem', fontWeight: 700, color: 'var(--text-bright)', lineHeight: 1 }}>
-                    {cls.modulation}
-                  </div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 4, fontFamily: 'var(--font-mono)' }}>
-                    {cls.family} family · model {cls.modelVersion} · {cls.inferenceTimeMs}ms
-                  </div>
-                </div>
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.68rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginBottom: 4 }}>
-                    <span>Confidence</span>
-                    <span style={{ color: 'var(--green)' }}>{cls.confidence.toFixed(1)}%</span>
-                  </div>
-                  <div style={{ height: 5, background: 'var(--bg-base)', borderRadius: 1, overflow: 'hidden' }}>
-                    <div style={{ width: `${cls.confidence}%`, height: '100%', background: 'var(--blue)', borderRadius: 1 }} />
-                  </div>
-                </div>
-                {ber && (
-                  <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border-faint)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <div>
-                        <div style={{ fontSize: '0.6rem', textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)', marginBottom: 1 }}>BER before FEC</div>
-                        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.83rem', color: 'var(--amber)' }}>{formatBER(ber.berBeforeFEC)}</div>
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '0.6rem', textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)', marginBottom: 1 }}>BER after FEC</div>
-                        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.83rem', color: 'var(--green)' }}>{ber.berAfterFEC != null ? formatBER(ber.berAfterFEC) : 'N/A'}</div>
-                      </div>
-                    </div>
-                  </div>
+      <section className="mt-10">
+        <SectionHeading
+          title="Bit stream analysis"
+          description="What the pipeline recovered, and how well it matches the reference."
+          action={<Button variant="ghost" size="sm" onClick={() => navigate('/bitstream')}>Open analysis <CaretRight /></Button>}
+        />
+        {bs ? (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card><CardHeader><CardTitle>Recovered data</CardTitle></CardHeader><CardContent><RecoveredDataPanel data={bs.recovered} compact /></CardContent></Card>
+            <Card><CardHeader><CardTitle>Correlation</CardTitle></CardHeader><CardContent><CorrelationPanel data={bs.correlation} height={150} compact /></CardContent></Card>
+          </div>
+        ) : (
+          <Card><CardContent><p className="py-4 text-[14px] text-muted-foreground">Recovered data and correlation appear here once the signal has been analyzed.</p></CardContent></Card>
+        )}
+      </section>
+
+      <section className="mt-10">
+        <SectionHeading
+          title="Detailed results"
+          action={
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" disabled={!cls}><DownloadSimple /> Export</Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={exportWith(exportCSV, 'CSV')}>CSV</DropdownMenuItem>
+                <DropdownMenuItem onSelect={exportWith(exportJSON, 'JSON')}>JSON</DropdownMenuItem>
+                <DropdownMenuItem onSelect={exportWith(exportPDF, 'PDF')}>PDF report</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          }
+        />
+        <Card className="gap-0 py-2">
+          <div className="grid md:grid-cols-2 xl:grid-cols-3 md:gap-x-4 px-2">
+            {results.map((r, i) => (
+              <button
+                key={r.to}
+                onClick={() => navigate(r.to)}
+                className={cn(
+                  'group flex items-center justify-between gap-4 rounded-lg px-3 py-3.5 text-start outline-none transition-colors duration-150 hover:bg-accent/60 focus-visible:bg-accent/60',
+                  i >= 1 && 'border-t border-border/70 md:border-t-0',
                 )}
-              </>
-            ) : (
-              <div style={{ color: 'var(--text-muted)', fontSize: '0.82rem', fontStyle: 'italic' }}>
-                Classification not run yet.
-              </div>
-            )}
+              >
+                <span className="min-w-0">
+                  <span className="block text-[14.5px] font-medium">{r.name}</span>
+                  <span className="block truncate text-[13px] text-muted-foreground">{r.value}</span>
+                </span>
+                <CaretRight className="size-4 shrink-0 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-primary" />
+              </button>
+            ))}
           </div>
-        </div>
-      )}
-
-      {/* Signal preview */}
-      <div style={{ marginBottom: 2 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-          <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', fontWeight: 600 }}>
-            Signal Preview
-          </span>
-          <button className="btn btn-ghost btn-sm" onClick={() => navigate('/visualizations')}>
-            Full workspace <ArrowRight size={10} />
-          </button>
-        </div>
-        <VisualizationWorkspace defaultTab="spectrum" />
-      </div>
+        </Card>
+        <Separator className="invisible" />
+      </section>
     </div>
   );
 }

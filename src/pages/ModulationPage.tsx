@@ -1,103 +1,116 @@
-﻿import { Cpu } from 'lucide-react';
-import { useAnalysis } from '../context/AnalysisContext';
-import ModulationResult from '../components/modulation/ModulationResult';
-import ConstellationChart from '../components/visualization/ConstellationChart';
-import StatusBadge from '../components/common/StatusBadge';
+import { Cpu } from '@phosphor-icons/react';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Progress } from '@/components/ui/progress';
+import { useAnalysis } from '@/context/AnalysisContext';
+import PageHeader from '@/components/common/PageHeader';
+import StatusPill from '@/components/common/StatusPill';
+import EmptyState from '@/components/common/EmptyState';
+import SummaryBar from '@/components/common/SummaryBar';
+import InstrumentPanel from '@/components/common/Instrument';
+import SectionHeading from '@/components/common/SectionHeading';
+import NextStep from '@/components/common/NextStep';
+import ChartFrame from '@/components/visualization/ChartFrame';
+import { cn } from '@/lib/utils';
+
+const CLASSES = ['OOK', 'PAM', '2FSK', '4FSK', 'CPFSK', 'GMSK', 'BPSK', 'QPSK', '8PSK', '16QAM', '64QAM', 'AM', 'FM', 'NOISE'];
 
 export default function ModulationPage() {
   const { state } = useAnalysis();
-  const { classification } = state;
+  const cls = state.classification;
+  const p = state.parameters;
 
-  if (!classification) {
+  if (!cls) {
     return (
-      <div className="page">
-        <div className="empty-state">
-          <div className="empty-state-title">No classification result</div>
-          <div className="empty-state-desc">Analyze a signal to run the modulation classifier.</div>
-        </div>
-      </div>
+      <>
+        <PageHeader title="Modulation" />
+        <EmptyState icon={<Cpu weight="duotone" />} title="No classification yet" description="Analyze a signal to run the modulation classifier. It scores all 14 classes and reports the top five." />
+      </>
     );
   }
 
+  const low = cls.confidence < 70;
+
   return (
-    <div className="page">
-      <div className="page-header">
-        <div>
-          <div className="page-title"><Cpu size={18} style={{ color: 'var(--accent-blue)' }} /> Automatic Modulation Classification</div>
-          <div className="page-subtitle">AI-powered modulation detection and family classification</div>
-        </div>
-        <StatusBadge status="completed" label="ANALYSIS COMPLETE" />
-      </div>
+    <div className="pb-8">
+      <PageHeader
+        title="Modulation"
+        description="Which scheme the transmitter used, and how sure the classifier is."
+        actions={<StatusPill variant={low ? 'warning' : 'success'}>{low ? 'Low confidence' : 'Classified'}</StatusPill>}
+      />
 
-      <div className="grid-2">
-        {/* Classification results */}
-        <div>
-          <ModulationResult result={classification} />
-        </div>
+      <div className="space-y-4">
+        <SummaryBar items={[
+          {
+            key: 'mod', label: 'Detected modulation', grow: 1.4,
+            custom: (
+              <div>
+                <div className="label-caps">Detected modulation</div>
+                <div className="mt-2 flex flex-wrap items-center gap-3">
+                  <span className="display-num text-[44px] leading-none">{cls.modulation}</span>
+                  <Badge variant="soft">{cls.family} family</Badge>
+                </div>
+              </div>
+            ),
+          },
+          { key: 'conf', label: 'Confidence', value: cls.confidence.toFixed(1), unit: '%', meter: cls.confidence, tone: low ? 'warn' : 'default' },
+          { key: 'snr', label: 'SNR', value: p ? p.snr.toFixed(1) : '—', unit: 'dB' },
+          { key: 'evm', label: 'EVM', value: p ? p.evm.toFixed(1) : '—', unit: '%' },
+          { key: 'inf', label: 'Inference', value: cls.inferenceTimeMs, unit: 'ms', note: cls.modelVersion },
+        ]} />
 
-        {/* Constellation diagram */}
-        <div>
-          <ConstellationChart height={340} />
-          <div className="card card-sm" style={{ marginTop: 12 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              {[
-                { label: 'Detected', value: classification.modulation, color: 'var(--accent-cyan)' },
-                { label: 'Family', value: classification.family, color: 'var(--accent-blue)' },
-                { label: 'Confidence', value: `${classification.confidence.toFixed(1)}%`, color: 'var(--color-success)' },
-                { label: 'EVM', value: `${state.parameters?.evm ?? '--'}% RMS`, color: 'var(--text-primary)' },
-              ].map(({ label, value, color }) => (
-                <div key={label} style={{ borderBottom: '1px solid var(--border-subtle)', paddingBottom: 8 }}>
-                  <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 2 }}>{label}</div>
-                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.9rem', fontWeight: 600, color }}>{value}</div>
+        <div className="grid items-start gap-4 lg:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>Class probabilities</CardTitle>
+              <CardDescription>Top {cls.topK.length} of {CLASSES.length} classes.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3.5">
+              {cls.topK.map((item, i) => (
+                <div key={item.modulation} className="grid grid-cols-[72px_1fr_52px] items-center gap-3">
+                  <span className={cn('text-[14px]', i === 0 ? 'font-medium' : 'text-muted-foreground')}>{item.modulation}</span>
+                  <Progress value={item.confidence} className={cn('h-1.5', i !== 0 && '[&>*]:bg-muted-foreground/40')} />
+                  <span className={cn('tnum text-end text-[13.5px]', i === 0 ? 'font-medium' : 'text-muted-foreground')}>{item.confidence.toFixed(1)}%</span>
                 </div>
               ))}
-            </div>
-          </div>
+            </CardContent>
+          </Card>
+
+          <InstrumentPanel
+            title="Classifier"
+            description="The model and the class set it chooses from."
+            groups={[
+              { title: 'Result', rows: [
+                ['Detected', cls.modulation, 'accent'],
+                ['Family', cls.family],
+                ['Confidence', `${cls.confidence.toFixed(1)} %`, low ? 'warn' : 'good'],
+              ]},
+              { title: 'Model', rows: [
+                ['Version', cls.modelVersion],
+                ['Inference', `${cls.inferenceTimeMs} ms`],
+                ['Classes', String(CLASSES.length)],
+              ]},
+            ]}
+          />
         </div>
       </div>
 
-      {/* Supported modulation classes */}
-      <div className="card card-sm" style={{ marginTop: 16 }}>
-        <div className="card-header">
-          <span className="card-title">Supported Modulation Classes</span>
-          <span className="ai-badge">AMC Engine Â· 14 Classes</span>
+      <section className="mt-10">
+        <SectionHeading title="Evidence" description="The constellation the classifier saw, and the classes it chose from." />
+        <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
+          <ChartFrame id="constellation" height={340} />
+          <Card>
+            <CardHeader><CardTitle>Supported classes</CardTitle><CardDescription>The detected class is highlighted.</CardDescription></CardHeader>
+            <CardContent className="flex flex-wrap gap-2">
+              {CLASSES.map((c) => (
+                <Badge key={c} variant={c === cls.modulation ? 'default' : 'muted'} className="px-3 py-1 text-[13px]">{c}</Badge>
+              ))}
+            </CardContent>
+          </Card>
         </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          {[
-            { name: 'OOK',   family: 'ASK' },
-            { name: 'PAM',   family: 'ASK' },
-            { name: '2FSK',  family: 'FSK' },
-            { name: '4FSK',  family: 'FSK' },
-            { name: 'CPFSK', family: 'FSK' },
-            { name: 'GMSK',  family: 'FSK' },
-            { name: 'BPSK',  family: 'PSK' },
-            { name: 'QPSK',  family: 'PSK' },
-            { name: '8PSK',  family: 'PSK' },
-            { name: '16QAM', family: 'QAM' },
-            { name: '64QAM', family: 'QAM' },
-            { name: 'AM',    family: 'AM'  },
-            { name: 'FM',    family: 'FM'  },
-            { name: 'NOISE', family: 'None'},
-          ].map(({ name, family }) => {
-            const isActive = name === classification.modulation;
-            return (
-              <span
-                key={name}
-                className="chip"
-                title={`Family: ${family}`}
-                style={{
-                  background: isActive ? 'rgba(0,229,255,0.12)' : undefined,
-                  borderColor: isActive ? 'var(--accent-cyan)' : undefined,
-                  color: isActive ? 'var(--accent-cyan)' : undefined,
-                  fontWeight: isActive ? 600 : undefined,
-                }}
-              >
-                {isActive ? 'âœ“ ' : ''}{name}
-              </span>
-            );
-          })}
-        </div>
-      </div>
+      </section>
+
+      <NextStep to="/synchronization" label="Synchronization" description="Recover the carrier and symbol timing for this scheme." />
     </div>
   );
 }

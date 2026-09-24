@@ -1,9 +1,15 @@
-import { RefreshCw } from 'lucide-react';
-import { useAnalysis } from '../context/AnalysisContext';
-import SyncPanel from '../components/synchronization/SyncPanel';
-import FreqVsTime from '../components/visualization/FreqVsTime';
-import PhaseVsTime from '../components/visualization/PhaseVsTime';
-import StatusBadge from '../components/common/StatusBadge';
+import { ArrowsClockwise } from '@phosphor-icons/react';
+import { useAnalysis } from '@/context/AnalysisContext';
+import PageHeader from '@/components/common/PageHeader';
+import StatusPill from '@/components/common/StatusPill';
+import EmptyState from '@/components/common/EmptyState';
+import SummaryBar from '@/components/common/SummaryBar';
+import InstrumentPanel from '@/components/common/Instrument';
+import Timeline, { type Step } from '@/components/common/Timeline';
+import SectionHeading from '@/components/common/SectionHeading';
+import NextStep from '@/components/common/NextStep';
+import AnalysisGrid from '@/components/visualization/AnalysisGrid';
+import { formatCFO, formatPhase } from '@/utils/formatters';
 
 export default function SynchronizationPage() {
   const { state } = useAnalysis();
@@ -11,59 +17,70 @@ export default function SynchronizationPage() {
 
   if (!sync) {
     return (
-      <div className="page">
-        <div className="empty-state">
-          <div className="empty-state-title">No synchronization data</div>
-          <div className="empty-state-desc">Analyze a signal to run synchronization.</div>
-        </div>
-      </div>
+      <>
+        <PageHeader title="Synchronization" />
+        <EmptyState icon={<ArrowsClockwise weight="duotone" />} title="No synchronization data" description="Analyze a signal to run carrier recovery, timing recovery and matched filtering." />
+      </>
     );
   }
 
+  const locked = sync.carrierLocked && sync.timingLocked;
+  const step = (name: string, ok: boolean, note: string): Step => ({ name, status: ok ? 'done' : 'failed', note, time: ok ? 'Completed' : 'Failed' });
+
   return (
-    <div className="page">
-      <div className="page-header">
-        <div>
-          <div className="page-title"><RefreshCw size={18} style={{ color: 'var(--accent-blue)' }} /> Synchronization</div>
-          <div className="page-subtitle">Carrier recovery, timing synchronization, and matched filtering</div>
+    <div className="pb-8">
+      <PageHeader
+        title="Synchronization"
+        description="Carrier and timing recovery, so the demodulator sees clean symbols."
+        actions={<StatusPill variant={locked ? 'success' : 'error'}>{locked ? 'Locked' : 'Not locked'}</StatusPill>}
+      />
+
+      <div className="space-y-4">
+        <SummaryBar items={[
+          { key: 'car', label: 'Carrier', value: sync.carrierLocked ? 'Locked' : 'Not locked', tone: sync.carrierLocked ? 'good' : 'warn' },
+          { key: 'tim', label: 'Symbol timing', value: sync.timingLocked ? 'Locked' : 'Not locked', tone: sync.timingLocked ? 'good' : 'warn' },
+          { key: 'cfo', label: 'Carrier offset', value: formatCFO(sync.cfoEstimate).replace(/\s*kHz/, ''), unit: 'kHz' },
+          { key: 'ph', label: 'Phase offset', value: sync.phaseOffset.toFixed(1), unit: '°' },
+          { key: 'to', label: 'Timing offset', value: sync.timingOffset.toFixed(1), unit: 'samples' },
+        ]} />
+
+        <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <InstrumentPanel
+            title="Estimated parameters"
+            description="What the loops converged to."
+            groups={[
+              { title: 'Carrier', rows: [
+                ['Carrier offset', formatCFO(sync.cfoEstimate), sync.cfoEstimate !== 0 ? 'warn' : 'good'],
+                ['Phase offset', formatPhase(sync.phaseOffset), 'warn'],
+                ['Lock', sync.carrierLocked ? 'Locked' : 'Not locked', sync.carrierLocked ? 'good' : 'bad'],
+              ]},
+              { title: 'Timing', rows: [
+                ['Timing offset', `${sync.timingOffset.toFixed(1)} samples`],
+                ['Lock', sync.timingLocked ? 'Locked' : 'Not locked', sync.timingLocked ? 'good' : 'bad'],
+                ['Burst detected', sync.burstDetected ? 'Yes' : 'No'],
+              ]},
+            ]}
+          />
+          <Timeline
+            title="Recovery chain"
+            description="Each step needs the one before it."
+            steps={[
+              step('Carrier / frequency sync', sync.carrierLocked, 'CFO estimation and correction'),
+              step('Symbol timing recovery', sync.timingLocked, 'Gardner / Müller-Müller loop'),
+              step('Matched filtering', sync.matchedFilterApplied, 'Root raised cosine'),
+              { name: 'Demodulation', status: 'done', note: 'Coherent detection' },
+              step('Sync-word detection', sync.syncWordDetected, 'Preamble correlation'),
+            ]}
+          />
         </div>
-        <StatusBadge status={sync.status === 'completed' ? 'completed' : 'warning'} label={sync.status.toUpperCase()} />
       </div>
 
-      <div className="grid-2" style={{ marginBottom: 16 }}>
-        <SyncPanel sync={sync} />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {/* Processing chain description */}
-          <div className="card card-sm">
-            <div className="card-header">
-              <span className="card-title">Synchronization Pipeline</span>
-            </div>
-            {[
-              { step: 1, name: 'Carrier / Frequency Synchronization', done: sync.carrierLocked, desc: 'CFO estimation and correction' },
-              { step: 2, name: 'Symbol Timing Recovery', done: sync.timingLocked, desc: 'Gardner/Müller-Müller timing loop' },
-              { step: 3, name: 'Matched Filtering', done: sync.matchedFilterApplied, desc: 'Root raised cosine filter applied' },
-              { step: 4, name: 'Demodulation', done: true, desc: 'Coherent detection' },
-              { step: 5, name: 'Sync-Word Detection', done: sync.syncWordDetected, desc: 'Preamble/header correlation' },
-            ].map(({ step, name, done, desc }) => (
-              <div key={step} style={{ display: 'flex', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border-subtle)' }}>
-                <div style={{ width: 20, height: 20, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: 700, fontFamily: 'var(--font-mono)', background: done ? 'var(--color-success-bg)' : 'var(--bg-panel)', border: `1px solid ${done ? 'rgba(76,175,80,0.4)' : 'var(--border-subtle)'}`, color: done ? 'var(--color-success)' : 'var(--text-muted)', marginTop: 1 }}>
-                  {done ? '✓' : step}
-                </div>
-                <div>
-                  <div style={{ fontSize: '0.82rem', color: done ? 'var(--text-primary)' : 'var(--text-muted)', fontWeight: done ? 500 : 400 }}>{name}</div>
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{desc}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+      <section className="mt-10">
+        <SectionHeading title="Recovery traces" description="Frequency and phase over time, and the constellation after correction." />
+        <AnalysisGrid charts={['freq-time', 'phase-time', 'constellation']} cellHeight={220} />
+      </section>
 
-      {/* Charts */}
-      <div className="flex-col">
-        <FreqVsTime height={220} />
-        <PhaseVsTime height={220} />
-      </div>
+      <NextStep to="/demodulation" label="Demodulation" description="Turn the synchronized symbols into bits." />
     </div>
   );
 }

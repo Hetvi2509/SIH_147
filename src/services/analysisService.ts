@@ -1,5 +1,5 @@
-﻿// ============================================================
-// Analysis Service â€” wired to the SR-Mamba FastAPI backend
+// ============================================================
+// Analysis Service — wired to the SR-Mamba FastAPI backend
 // Classification is real; all other stages are analytically
 // derived from the classification result + file metadata.
 // ============================================================
@@ -7,14 +7,15 @@
 import type {
   FileMetadata, SignalParameters, ClassificationResult,
   SyncParameters, DemodulationResult, FECResult,
-  InterleaverResult, BERResult, PipelineStage, ModulationType, ModulationFamily
+  InterleaverResult, BERResult, BitStreamResult, AnalysisState, PipelineStage, ModulationType, ModulationFamily
 } from '../types';
 
 import {
   MOCK_FILE_METADATA, MOCK_PARAMETERS,
   MOCK_SYNC, MOCK_DEMODULATION, MOCK_FEC, MOCK_INTERLEAVER,
-  MOCK_BER, MOCK_PIPELINE
+  MOCK_BER, MOCK_BITSTREAM, MOCK_PIPELINE, USE_STATIC_DATA
 } from '../data/mockAnalysis';
+import { buildBitStream } from '../data/bitStream';
 import { setLiveSignalPreview } from '../data/mockSignal';
 
 // Base URL for the real backend API (set via env variable)
@@ -68,7 +69,7 @@ function berFromSNR(snrDb: number, bitsPerSym: number): number {
 }
 
 // ---------------------------------------------------------------
-// Upload a signal file â€” store locally, derive metadata
+// Upload a signal file — store locally, derive metadata
 // ---------------------------------------------------------------
 export async function uploadSignal(file: File): Promise<{ analysisId: string; metadata: FileMetadata }> {
   _uploadedFile = file;
@@ -116,7 +117,7 @@ export async function getPipelineStatus(_analysisId: string): Promise<PipelineSt
 }
 
 // ---------------------------------------------------------------
-// Get extracted signal parameters â€” derived from real classification
+// Get extracted signal parameters — derived from real classification
 // ---------------------------------------------------------------
 export async function getParameters(_analysisId: string): Promise<SignalParameters> {
   await delay(200);
@@ -156,12 +157,12 @@ export async function getParameters(_analysisId: string): Promise<SignalParamete
 }
 
 // ---------------------------------------------------------------
-// Get modulation classification â€” REAL API CALL
+// Get modulation classification — REAL API CALL
 // POST /api/v1/classify  (multipart/form-data with the signal file)
 // ---------------------------------------------------------------
 export async function getClassification(_analysisId: string): Promise<ClassificationResult> {
-  if (!_uploadedFile) {
-    console.warn('[AnalysisService] No file in memory â€” returning mock classification.');
+  if (USE_STATIC_DATA || !_uploadedFile) {
+    console.warn('[AnalysisService] No file in memory — returning mock classification.');
     return _mockClassification();
   }
 
@@ -190,7 +191,7 @@ export async function getClassification(_analysisId: string): Promise<Classifica
 
   const data = await response.json();
 
-  // Map backend labels â†’ TypeScript union (normalise unknown labels)
+  // Map backend labels → TypeScript union (normalise unknown labels)
   const knownModulations: ModulationType[] = [
     // Official checkpoint classes
     'OOK','PAM','2FSK','4FSK','CPFSK','GMSK',
@@ -253,7 +254,7 @@ function _mockClassification(): ClassificationResult {
 }
 
 // ---------------------------------------------------------------
-// Synchronization â€” derived from classification
+// Synchronization — derived from classification
 // ---------------------------------------------------------------
 export async function getSynchronization(_analysisId: string): Promise<SyncParameters> {
   await delay(200);
@@ -275,7 +276,7 @@ export async function getSynchronization(_analysisId: string): Promise<SyncParam
 }
 
 // ---------------------------------------------------------------
-// Demodulation â€” derived from classification
+// Demodulation — derived from classification
 // ---------------------------------------------------------------
 export async function getDemodulation(_analysisId: string): Promise<DemodulationResult> {
   await delay(200);
@@ -302,7 +303,7 @@ export async function getDemodulation(_analysisId: string): Promise<Demodulation
 }
 
 // ---------------------------------------------------------------
-// FEC â€” derived from classification
+// FEC — derived from classification
 // ---------------------------------------------------------------
 export async function getFEC(_analysisId: string): Promise<FECResult> {
   await delay(200);
@@ -360,20 +361,53 @@ export async function getBER(_analysisId: string): Promise<BERResult> {
 }
 
 // ---------------------------------------------------------------
-// Export helpers
+// Bit stream analysis — recovered data + correlation.
+// Derived from the demodulation / BER results of this run.
 // ---------------------------------------------------------------
-export async function exportPDF(_analysisId: string): Promise<void> {
-  alert('PDF export requires a backend report endpoint. (Not yet implemented)');
+export async function getBitStream(analysisId: string): Promise<BitStreamResult> {
+  await delay(150);
+  if (!_lastClassification || !_lastFileMetadata) return MOCK_BITSTREAM;
+  const cls = _lastClassification;
+  const demod = await getDemodulation(analysisId);
+  const ber = await getBER(analysisId);
+  const encoding = `${cls.modulation}, Gray-mapped`;
+  if (demod.status !== 'successful') {
+    return buildBitStream({ totalBits: 0, invalidBits: 0, score: 0.1, encoding, seed: 7 });
+  }
+  const berAfter = ber.berAfterFEC ?? ber.berBeforeFEC;
+  const invalidBits = Math.min(ber.totalBits, Math.round(ber.totalBits * berAfter));
+  const score = Math.min(0.99, 0.5 + 0.49 * (cls.confidence / 100));
+  return buildBitStream({ totalBits: ber.totalBits, invalidBits, score, encoding });
 }
 
-export async function exportCSV(_analysisId: string): Promise<void> {
-  if (!_lastClassification || !_lastFileMetadata) {
+// ---------------------------------------------------------------
+// Export helpers
+// ---------------------------------------------------------------
+export async function exportPDF(_analysisId: string, snapshot: AnalysisState): Promise<void> {
+  if (!snapshot.classification) {
     alert('No analysis data to export. Run an analysis first.');
     return;
   }
-  const cls = _lastClassification;
-  const meta = _lastFileMetadata;
-  const rows = [
+  const { downloadReportPdf } = await import('../report/generatePdf');
+  await downloadReportPdf(snapshot);
+}
+
+function download(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name; a.click();
+  URL.revokeObjectURL(url);
+}
+
+export async function exportCSV(analysisId: string, s: AnalysisState): Promise<void> {
+  const cls = s.classification ?? _lastClassification;
+  const meta = s.fileMetadata ?? _lastFileMetadata;
+  if (!cls || !meta) {
+    alert('No analysis data to export. Run an analysis first.');
+    return;
+  }
+  const bs = s.bitStream;
+  const rows: string[][] = [
     ['Field', 'Value'],
     ['File Name', meta.fileName],
     ['File Size (bytes)', String(meta.fileSize)],
@@ -387,29 +421,41 @@ export async function exportCSV(_analysisId: string): Promise<void> {
     ['Inference Time (ms)', String(cls.inferenceTimeMs)],
     ['Model Version', cls.modelVersion],
     ...cls.topK.map((t, i) => [`Top-${i + 1}`, `${t.modulation} (${t.confidence.toFixed(1)}%)`]),
+    ...(bs ? [
+      ['Recovered Bits (total)', String(bs.recovered.totalBits)],
+      ['Recovered Bits (valid)', String(bs.recovered.validBits)],
+      ['Recovered Bits (invalid)', String(bs.recovered.invalidBits)],
+      ['Recovered Data Preview (bits)', bs.recovered.bitPreview],
+      ['Recovered Data Preview (hex)', bs.recovered.hexPreview],
+      ['Correlation Score', bs.correlation.score.toFixed(3)],
+      ['Correlation Peak Lag (symbols)', String(bs.correlation.peakLag)],
+      ['Correlation Reference', bs.correlation.reference],
+      ['Correlation Sidelobe Ratio (dB)', String(bs.correlation.sidelobeRatioDb)],
+    ] : []),
   ];
   const csv = rows.map((r) => r.map((v) => `"${v.replace(/"/g, '""')}"`).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = `signal_analysis_${_analysisId}.csv`; a.click();
-  URL.revokeObjectURL(url);
+  download(new Blob([csv], { type: 'text/csv' }), `signal_analysis_${analysisId}.csv`);
 }
 
-export async function exportJSON(analysisId: string): Promise<void> {
+export async function exportJSON(analysisId: string, s: AnalysisState): Promise<void> {
   const report = {
     analysisId,
     exportedAt: new Date().toISOString(),
-    modelVersion: _lastClassification?.modelVersion ?? 'unknown',
-    file: _lastFileMetadata ?? null,
-    classification: _lastClassification ?? null,
+    modelVersion: (s.classification ?? _lastClassification)?.modelVersion ?? 'unknown',
+    file: s.fileMetadata ?? _lastFileMetadata ?? null,
+    parameters: s.parameters,
+    classification: s.classification ?? _lastClassification ?? null,
+    synchronization: s.sync,
+    demodulation: s.demodulation,
+    fec: s.fec,
+    interleaver: s.interleaver,
+    ber: s.ber,
+    bitStreamAnalysis: s.bitStream
+      ? { recoveredData: s.bitStream.recovered, correlation: s.bitStream.correlation }
+      : null,
     note: 'Classification powered by SR-Mamba official model.',
   };
-  const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = `signal_analysis_${analysisId}.json`; a.click();
-  URL.revokeObjectURL(url);
+  download(new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' }), `signal_analysis_${analysisId}.json`);
 }
 
 export { API_BASE };

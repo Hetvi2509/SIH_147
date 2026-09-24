@@ -1,16 +1,17 @@
-﻿// ============================================================
-// Mock Analysis State â€” Default QPSK Demo Scenario
+// ============================================================
+// Mock Analysis State — Default QPSK Demo Scenario
 // ============================================================
 
+import { buildBitStream } from './bitStream';
 import type {
   FileMetadata, SignalParameters, ClassificationResult,
   SyncParameters, DemodulationResult, FECResult,
-  InterleaverResult, BERResult, PipelineStage, AnalysisState, StageStatus,
+  InterleaverResult, BERResult, BitStreamResult, PipelineStage, AnalysisState, StageStatus,
 } from '../types';
 
 export const MOCK_FILE_METADATA: FileMetadata = {
   fileName: 'capture_qpsk_001.iq',
-  fileSize: 26000000, // ~24.8 MB (10485760 samples Ã— 4 bytes Ã— 2 channels)
+  fileSize: 26000000, // ~24.8 MB (10485760 samples × 4 bytes × 2 channels)
   fileType: 'IQ',
   format: 'Complex Float32',
   layout: 'Interleaved',
@@ -104,6 +105,13 @@ export const MOCK_BER: BERResult = {
   decodedBits: 1245892,
 };
 
+export const MOCK_BITSTREAM: BitStreamResult = buildBitStream({
+  totalBits: 2491784,
+  invalidBits: 77,
+  score: 0.94,
+  encoding: 'QPSK, Gray-mapped',
+});
+
 export const MOCK_PIPELINE: PipelineStage[] = [
   { id: 'file-input', name: 'File Input', status: 'completed', duration: 48, timestamp: '10:01:22' },
   { id: 'preprocessing', name: 'Preprocessing', status: 'completed', duration: 312, timestamp: '10:01:22' },
@@ -112,6 +120,7 @@ export const MOCK_PIPELINE: PipelineStage[] = [
   { id: 'synchronization', name: 'Synchronization', status: 'completed', duration: 524, timestamp: '10:01:24' },
   { id: 'demodulation', name: 'Demodulation', status: 'completed', duration: 218, timestamp: '10:01:25' },
   { id: 'fec-interleaver', name: 'FEC / Interleaver', status: 'completed', duration: 183, timestamp: '10:01:25' },
+  { id: 'bit-stream-analysis', name: 'Bit Stream Analysis', status: 'completed', duration: 96, timestamp: '10:01:25' },
   { id: 'final-report', name: 'Final Report', status: 'completed', duration: 44, timestamp: '10:01:25' },
 ];
 
@@ -124,6 +133,7 @@ export const MOCK_INITIAL_STATE: AnalysisState = {
   fec: null,
   interleaver: null,
   ber: null,
+  bitStream: null,
   pipeline: MOCK_PIPELINE.map((s) => ({ ...s, status: 'pending' as StageStatus })),
   analysisId: null,
   isLoading: false,
@@ -131,4 +141,26 @@ export const MOCK_INITIAL_STATE: AnalysisState = {
   overallStatus: 'idle',
   segmentStart: 0,
   segmentEnd: 0,
+};
+
+// Frontend-only mode: set VITE_USE_STATIC_DATA=true in .env.local
+export const USE_STATIC_DATA = import.meta.env.VITE_USE_STATIC_DATA === 'true';
+
+export const MOCK_COMPLETED_STATE: AnalysisState = {
+  fileMetadata: MOCK_FILE_METADATA,
+  parameters: MOCK_PARAMETERS,
+  classification: MOCK_CLASSIFICATION,
+  sync: MOCK_SYNC,
+  demodulation: MOCK_DEMODULATION,
+  fec: MOCK_FEC,
+  interleaver: MOCK_INTERLEAVER,
+  ber: MOCK_BER,
+  bitStream: MOCK_BITSTREAM,
+  pipeline: MOCK_PIPELINE,
+  analysisId: 'analysis-static',
+  isLoading: false,
+  error: null,
+  overallStatus: 'completed',
+  segmentStart: 0,
+  segmentEnd: MOCK_FILE_METADATA.duration,
 };
