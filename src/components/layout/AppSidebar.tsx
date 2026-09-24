@@ -139,7 +139,7 @@ export default function AppSidebar() {
     <Sidebar collapsible="icon" className="border-r-0 smooth-shadow-ring-xs">
       <SidebarHeader className="h-16 justify-center border-b border-sidebar-border p-0 px-4 group-data-[collapsible=icon]:px-0">
         <div className="flex items-center gap-2.5 group-data-[collapsible=icon]:justify-center">
-          <img src="/logo.png" alt="TarangChakra" width={40} height={40} className="size-10 shrink-0 object-contain group-data-[collapsible=icon]:size-9" />
+          <img src="/logo.png" alt="TarangChakra" width={48} height={48} className="size-12 shrink-0 object-contain group-data-[collapsible=icon]:size-10" />
           <div className="min-w-0 group-data-[collapsible=icon]:hidden">
             <Wordmark className="block font-display text-[18px] leading-none tracking-[-0.01em]" />
             <div className="mt-1.5 text-[11.5px] leading-none text-muted-foreground">Modulation analysis</div>
