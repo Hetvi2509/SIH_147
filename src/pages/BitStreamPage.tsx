@@ -6,7 +6,6 @@ import StatusPill from '@/components/common/StatusPill';
 import EmptyState from '@/components/common/EmptyState';
 import SummaryBar from '@/components/common/SummaryBar';
 import Timeline from '@/components/common/Timeline';
-import NextStep from '@/components/common/NextStep';
 import RecoveredDataPanel from '@/components/bitstream/RecoveredDataPanel';
 import CorrelationPanel from '@/components/bitstream/CorrelationPanel';
 import { formatSamples } from '@/utils/formatters';
@@ -33,6 +32,7 @@ export default function BitStreamPage() {
         title="Bit Stream Analysis"
         description="The two outputs of this stage: the data that was recovered, and how well it correlates with the reference."
         actions={<StatusPill variant={ok ? 'success' : 'warning'}>{ok ? 'Bit stream recovered' : 'No bit stream'}</StatusPill>}
+        next={{ to: '/report', label: 'Report' }}
       />
 
       <div className="space-y-4">
@@ -70,7 +70,6 @@ export default function BitStreamPage() {
         </Card>
       </div>
 
-      <NextStep to="/report" label="Report" description="Collect every stage into one exportable report." />
     </div>
   );
 }

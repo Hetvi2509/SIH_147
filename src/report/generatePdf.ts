@@ -39,7 +39,7 @@ export async function downloadReportPdf(state: AnalysisState): Promise<void> {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `signal-analysis-report_${name}.pdf`;
+  a.download = `tarangchakra-report_${name}.pdf`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 }

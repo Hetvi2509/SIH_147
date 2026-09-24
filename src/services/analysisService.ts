@@ -105,7 +105,6 @@ export async function uploadSignal(file: File): Promise<{ analysisId: string; me
 // ---------------------------------------------------------------
 export async function startAnalysis(analysisId: string): Promise<void> {
   await delay(200);
-  console.log('[AnalysisService] startAnalysis', analysisId);
 }
 
 // ---------------------------------------------------------------

@@ -3,7 +3,7 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
 import { Check as CheckIcon, CaretRight as ChevronRightIcon, Circle as CircleIcon } from "@phosphor-icons/react"
-import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui"
+import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu"
 
 function DropdownMenu({
   ...props

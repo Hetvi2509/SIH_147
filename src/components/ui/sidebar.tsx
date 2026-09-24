@@ -4,7 +4,7 @@ import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 import { SidebarSimple as PanelLeftIcon } from "@phosphor-icons/react"
-import { Slot } from "radix-ui"
+import * as Slot from "@radix-ui/react-slot"
 
 import { useIsMobile } from "@/hooks/use-mobile"
 import { Button } from "@/components/ui/button"

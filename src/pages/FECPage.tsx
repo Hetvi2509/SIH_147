@@ -5,7 +5,6 @@ import StatusPill, { type PillVariant } from '@/components/common/StatusPill';
 import EmptyState from '@/components/common/EmptyState';
 import SummaryBar from '@/components/common/SummaryBar';
 import InstrumentPanel, { type InstrumentGroup } from '@/components/common/Instrument';
-import NextStep from '@/components/common/NextStep';
 import { formatBER, formatSamples } from '@/utils/formatters';
 
 export default function FECPage() {
@@ -55,6 +54,7 @@ export default function FECPage() {
         title="FEC / Interleaver"
         description="Error correction and interleaving, and what they did to the bit error rate."
         actions={<StatusPill variant={head.v}>{head.l}</StatusPill>}
+        next={{ to: '/bitstream', label: 'Bit Stream Analysis' }}
       />
 
       <div className="space-y-4">
@@ -82,7 +82,6 @@ export default function FECPage() {
         </div>
       </div>
 
-      <NextStep to="/bitstream" label="Bit Stream Analysis" description="Inspect the recovered data and correlate it with the reference." />
     </div>
   );
 }

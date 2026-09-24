@@ -136,10 +136,10 @@ export default function ReportDocument({ state, spectrogram }: Props) {
   ].filter(Boolean).join(' ');
 
   return (
-    <Document title={`Signal analysis report - ${name}`} author="Signal Lab" subject="RF signal analysis and modulation classification">
+    <Document title={`Signal analysis report - ${name}`} author="TarangChakra" subject="RF signal analysis and modulation classification">
       <Page size="A4" style={s.page}>
         <View style={s.header} fixed>
-          <Text style={s.headerText}>Signal Lab · Analysis report</Text>
+          <Text style={s.headerText}>TarangChakra · Analysis report</Text>
           <Text style={s.headerText}>{name}</Text>
         </View>
         <View style={s.footer} fixed>
@@ -150,7 +150,7 @@ export default function ReportDocument({ state, spectrogram }: Props) {
         {/* Title block */}
         <View style={s.brandRow}>
           <View style={s.mark} />
-          <Text style={s.brand}>Signal Lab</Text>
+          <Text style={s.brand}>Tarang<Text style={{ color: T.orange }}>Chakra</Text></Text>
         </View>
         <Text style={s.title}>Signal Analysis Report</Text>
         <Text style={s.sub}>Modulation classification, synchronization, demodulation and bit stream analysis</Text>

@@ -5,9 +5,6 @@ import StatusPill from '@/components/common/StatusPill';
 import EmptyState from '@/components/common/EmptyState';
 import SummaryBar from '@/components/common/SummaryBar';
 import InstrumentPanel from '@/components/common/Instrument';
-import SectionHeading from '@/components/common/SectionHeading';
-import NextStep from '@/components/common/NextStep';
-import AnalysisGrid from '@/components/visualization/AnalysisGrid';
 import { formatCFO, formatEVM, formatPhase, formatPower, formatSampleRate } from '@/utils/formatters';
 
 export default function ParametersPage() {
@@ -31,6 +28,7 @@ export default function ParametersPage() {
         title="Parameters"
         description="RF characteristics extracted from the signal before classification."
         actions={<StatusPill variant="success">Extracted</StatusPill>}
+        next={{ to: '/modulation', label: 'Modulation' }}
       />
 
       <div className="space-y-4">
@@ -98,12 +96,6 @@ export default function ParametersPage() {
         />
       </div>
 
-      <section className="mt-10">
-        <SectionHeading title="Where these come from" description="The spectrum and waveform the measurements were taken from." />
-        <AnalysisGrid charts={['spectrum', 'iq', 'amplitude']} cellHeight={200} />
-      </section>
-
-      <NextStep to="/modulation" label="Modulation" description="Classify the scheme the transmitter used." />
     </div>
   );
 }

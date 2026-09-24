@@ -9,7 +9,6 @@ import EmptyState from '@/components/common/EmptyState';
 import SummaryBar from '@/components/common/SummaryBar';
 import InstrumentPanel from '@/components/common/Instrument';
 import SectionHeading from '@/components/common/SectionHeading';
-import NextStep from '@/components/common/NextStep';
 import ChartFrame from '@/components/visualization/ChartFrame';
 import { cn } from '@/lib/utils';
 
@@ -37,6 +36,7 @@ export default function ModulationPage() {
         title="Modulation"
         description="Which scheme the transmitter used, and how sure the classifier is."
         actions={<StatusPill variant={low ? 'warning' : 'success'}>{low ? 'Low confidence' : 'Classified'}</StatusPill>}
+        next={{ to: '/synchronization', label: 'Synchronization' }}
       />
 
       <div className="space-y-4">
@@ -110,7 +110,6 @@ export default function ModulationPage() {
         </div>
       </section>
 
-      <NextStep to="/synchronization" label="Synchronization" description="Recover the carrier and symbol timing for this scheme." />
     </div>
   );
 }

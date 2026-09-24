@@ -1,7 +1,7 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
 import { CaretRight as ChevronRight, DotsThree as MoreHorizontal } from "@phosphor-icons/react"
-import { Slot } from "radix-ui"
+import * as Slot from "@radix-ui/react-slot"
 
 function Breadcrumb({ ...props }: React.ComponentProps<"nav">) {
   return <nav aria-label="breadcrumb" data-slot="breadcrumb" {...props} />

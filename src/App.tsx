@@ -1,33 +1,74 @@
+import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AnalysisProvider } from './context/AnalysisContext';
 import AppShell from './components/layout/AppShell';
-import DashboardPage from './pages/DashboardPage';
-import VisualizationsPage from './pages/VisualizationsPage';
-import ParametersPage from './pages/ParametersPage';
-import ModulationPage from './pages/ModulationPage';
-import SynchronizationPage from './pages/SynchronizationPage';
-import DemodulationPage from './pages/DemodulationPage';
-import FECPage from './pages/FECPage';
-import BitStreamPage from './pages/BitStreamPage';
-import ReportPage from './pages/ReportPage';
+import { Skeleton } from './components/ui/skeleton';
+
+// One chunk per page: the shell paints first, and charts load with the pages that use them.
+const pages = {
+  dashboard: () => import('./pages/DashboardPage'),
+  visualizations: () => import('./pages/VisualizationsPage'),
+  parameters: () => import('./pages/ParametersPage'),
+  modulation: () => import('./pages/ModulationPage'),
+  synchronization: () => import('./pages/SynchronizationPage'),
+  demodulation: () => import('./pages/DemodulationPage'),
+  fec: () => import('./pages/FECPage'),
+  bitstream: () => import('./pages/BitStreamPage'),
+  report: () => import('./pages/ReportPage'),
+};
+
+const Dashboard = lazy(pages.dashboard);
+const Visualizations = lazy(pages.visualizations);
+const Parameters = lazy(pages.parameters);
+const Modulation = lazy(pages.modulation);
+const Synchronization = lazy(pages.synchronization);
+const Demodulation = lazy(pages.demodulation);
+const FEC = lazy(pages.fec);
+const BitStream = lazy(pages.bitstream);
+const Report = lazy(pages.report);
+
+function PageFallback() {
+  return (
+    <div className="space-y-4 pt-4" aria-busy="true" aria-label="Loading page">
+      <Skeleton className="h-9 w-64" />
+      <Skeleton className="h-4 w-96 max-w-full" />
+      <Skeleton className="mt-6 h-28 w-full rounded-2xl" />
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Skeleton className="h-64 rounded-2xl" />
+        <Skeleton className="h-64 rounded-2xl" />
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
+  // After the first page is up, fetch the remaining chunks while the browser is idle,
+  // so moving through the pipeline never waits on the network.
+  useEffect(() => {
+    const warm = () => Object.values(pages).forEach((load) => load());
+    const w = window as Window & { requestIdleCallback?: (cb: () => void) => number };
+    if (w.requestIdleCallback) w.requestIdleCallback(warm);
+    else setTimeout(warm, 1500);
+  }, []);
+
   return (
     <AnalysisProvider>
       <BrowserRouter>
         <AppShell>
-          <Routes>
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/visualizations" element={<VisualizationsPage />} />
-            <Route path="/parameters" element={<ParametersPage />} />
-            <Route path="/modulation" element={<ModulationPage />} />
-            <Route path="/synchronization" element={<SynchronizationPage />} />
-            <Route path="/demodulation" element={<DemodulationPage />} />
-            <Route path="/fec" element={<FECPage />} />
-            <Route path="/bitstream" element={<BitStreamPage />} />
-            <Route path="/report" element={<ReportPage />} />
-          </Routes>
+          <Suspense fallback={<PageFallback />}>
+            <Routes>
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/visualizations" element={<Visualizations />} />
+              <Route path="/parameters" element={<Parameters />} />
+              <Route path="/modulation" element={<Modulation />} />
+              <Route path="/synchronization" element={<Synchronization />} />
+              <Route path="/demodulation" element={<Demodulation />} />
+              <Route path="/fec" element={<FEC />} />
+              <Route path="/bitstream" element={<BitStream />} />
+              <Route path="/report" element={<Report />} />
+            </Routes>
+          </Suspense>
         </AppShell>
       </BrowserRouter>
     </AnalysisProvider>

@@ -6,9 +6,6 @@ import StatusPill from '@/components/common/StatusPill';
 import EmptyState from '@/components/common/EmptyState';
 import SummaryBar from '@/components/common/SummaryBar';
 import InstrumentPanel from '@/components/common/Instrument';
-import SectionHeading from '@/components/common/SectionHeading';
-import NextStep from '@/components/common/NextStep';
-import AnalysisGrid from '@/components/visualization/AnalysisGrid';
 import { formatBER, formatSamples } from '@/utils/formatters';
 
 export default function DemodulationPage() {
@@ -34,6 +31,7 @@ export default function DemodulationPage() {
         title="Demodulation"
         description="From symbols to bits, and how many of them came through clean."
         actions={<StatusPill variant={pill}>{ok ? 'Successful' : label}</StatusPill>}
+        next={{ to: '/fec', label: 'FEC / Interleaver' }}
       />
 
       <div className="space-y-4">
@@ -77,12 +75,6 @@ export default function DemodulationPage() {
         />
       </div>
 
-      <section className="mt-10">
-        <SectionHeading title="Symbol evidence" description="The decision constellation, the waveform and the eye opening." />
-        <AnalysisGrid charts={['constellation', 'iq', 'eye']} cellHeight={220} />
-      </section>
-
-      <NextStep to="/fec" label="FEC / Interleaver" description="Correct errors and undo any interleaving." />
     </div>
   );
 }

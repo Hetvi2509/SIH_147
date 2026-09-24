@@ -6,7 +6,6 @@ import PageHeader from '@/components/common/PageHeader';
 import EmptyState from '@/components/common/EmptyState';
 import SectionHeading from '@/components/common/SectionHeading';
 import SummaryBar from '@/components/common/SummaryBar';
-import NextStep from '@/components/common/NextStep';
 import AnalysisGrid from '@/components/visualization/AnalysisGrid';
 import DetailWorkspace from '@/components/visualization/DetailWorkspace';
 import { CHART_ORDER } from '@/components/visualization/chartRegistry';
@@ -43,6 +42,7 @@ export default function VisualizationsPage() {
             <ToggleGroupItem value="detail" className="px-4">Detail</ToggleGroupItem>
           </ToggleGroup>
         }
+        next={{ to: '/parameters', label: 'Parameters' }}
       />
 
       <div className="space-y-4">
@@ -85,7 +85,6 @@ export default function VisualizationsPage() {
         {view === 'grid' ? <AnalysisGrid charts={CHART_ORDER} cellHeight={230} /> : <DetailWorkspace />}
       </section>
 
-      <NextStep to="/parameters" label="Parameters" description="See the measurements behind these plots." />
     </div>
   );
 }

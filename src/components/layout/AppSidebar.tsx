@@ -10,6 +10,9 @@ import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarHeader, SidebarMenu, SidebarMenuButton,
   SidebarMenuItem, SidebarRail, useSidebar,
 } from '@/components/ui/sidebar';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Kbd } from '@/components/ui/kbd';
+import Wordmark from '@/components/common/Wordmark';
 import { useAnalysis } from '@/context/AnalysisContext';
 import type { AnalysisStage } from '@/types';
 import { cn } from '@/lib/utils';
@@ -120,6 +123,8 @@ function NavGroup({ group, open, onOpenChange, activePath }: { group: Group; ope
 
 export default function AppSidebar() {
   const { pathname } = useLocation();
+  const { state: sidebarState, toggleSidebar } = useSidebar();
+  const collapsed = sidebarState === 'collapsed';
   const [closed, setClosed] = useState<Record<string, boolean>>(loadClosed);
 
   useEffect(() => {
@@ -137,11 +142,23 @@ export default function AppSidebar() {
     <Sidebar collapsible="icon" className="border-r-0 smooth-shadow-ring-xs">
       <SidebarHeader className="h-16 justify-center border-b border-sidebar-border p-0 px-4 group-data-[collapsible=icon]:px-0">
         <div className="flex items-center gap-2.5 group-data-[collapsible=icon]:justify-center">
-          <div className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-primary text-primary-foreground smooth-shadow-xs group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:rounded-lg">
-            <Broadcast weight="bold" className="size-5 group-data-[collapsible=icon]:size-[18px]" />
-          </div>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={toggleSidebar}
+                aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                className="grid size-9 shrink-0 cursor-pointer place-items-center rounded-[10px] bg-primary text-primary-foreground outline-none smooth-shadow-xs transition-[background-color,scale] duration-150 ease-[var(--ease-ui)] hover:bg-[oklch(0.55_0.19_40)] focus-visible:ring-[3px] focus-visible:ring-ring active:scale-[0.96] group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:rounded-lg"
+              >
+                <Broadcast weight="bold" className="size-5 group-data-[collapsible=icon]:size-[18px]" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              {collapsed ? 'Expand sidebar' : 'Collapse sidebar'} <Kbd className="ms-1">Ctrl B</Kbd>
+            </TooltipContent>
+          </Tooltip>
           <div className="min-w-0 group-data-[collapsible=icon]:hidden">
-            <div className="font-display text-[18px] leading-none tracking-[-0.01em]">Signal Lab</div>
+            <Wordmark className="block font-display text-[18px] leading-none tracking-[-0.01em]" />
             <div className="mt-1.5 text-[11.5px] leading-none text-muted-foreground">Modulation analysis</div>
           </div>
         </div>

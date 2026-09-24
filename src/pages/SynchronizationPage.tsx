@@ -6,9 +6,6 @@ import EmptyState from '@/components/common/EmptyState';
 import SummaryBar from '@/components/common/SummaryBar';
 import InstrumentPanel from '@/components/common/Instrument';
 import Timeline, { type Step } from '@/components/common/Timeline';
-import SectionHeading from '@/components/common/SectionHeading';
-import NextStep from '@/components/common/NextStep';
-import AnalysisGrid from '@/components/visualization/AnalysisGrid';
 import { formatCFO, formatPhase } from '@/utils/formatters';
 
 export default function SynchronizationPage() {
@@ -33,6 +30,7 @@ export default function SynchronizationPage() {
         title="Synchronization"
         description="Carrier and timing recovery, so the demodulator sees clean symbols."
         actions={<StatusPill variant={locked ? 'success' : 'error'}>{locked ? 'Locked' : 'Not locked'}</StatusPill>}
+        next={{ to: '/demodulation', label: 'Demodulation' }}
       />
 
       <div className="space-y-4">
@@ -75,12 +73,6 @@ export default function SynchronizationPage() {
         </div>
       </div>
 
-      <section className="mt-10">
-        <SectionHeading title="Recovery traces" description="Frequency and phase over time, and the constellation after correction." />
-        <AnalysisGrid charts={['freq-time', 'phase-time', 'constellation']} cellHeight={220} />
-      </section>
-
-      <NextStep to="/demodulation" label="Demodulation" description="Turn the synchronized symbols into bits." />
     </div>
   );
 }

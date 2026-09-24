@@ -2,7 +2,7 @@
 // Analysis Context — Global application state
 // ============================================================
 
-import React, { createContext, useContext, useReducer, useCallback, type ReactNode } from 'react';
+import React, { createContext, useContext, useMemo, useReducer, useCallback, type ReactNode } from 'react';
 import type { AnalysisState, PipelineStage, StageStatus } from '../types';
 import { MOCK_INITIAL_STATE, MOCK_COMPLETED_STATE, MOCK_PIPELINE, USE_STATIC_DATA } from '../data/mockAnalysis';
 import * as analysisService from '../services/analysisService';
@@ -190,8 +190,13 @@ export function AnalysisProvider({ children }: { children: ReactNode }) {
     if (state.analysisId) await analysisService.exportCSV(state.analysisId, state);
   }, [state.analysisId]);
 
+  const value = useMemo(
+    () => ({ state, uploadFile, runAnalysis, setSegment, reset, exportJSON, exportPDF, exportCSV }),
+    [state, uploadFile, runAnalysis, setSegment, reset, exportJSON, exportPDF, exportCSV],
+  );
+
   return (
-    <AnalysisContext.Provider value={{ state, uploadFile, runAnalysis, setSegment, reset, exportJSON, exportPDF, exportCSV }}>
+    <AnalysisContext.Provider value={value}>
       {children}
     </AnalysisContext.Provider>
   );
