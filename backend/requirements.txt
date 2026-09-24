@@ -5,3 +5,6 @@ scipy
 fastapi
 uvicorn[standard]
 python-multipart
+
+psycopg[binary,pool]
+python-dotenv

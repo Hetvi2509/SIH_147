@@ -17,7 +17,7 @@ const s = StyleSheet.create({
   footer: { position: 'absolute', bottom: 24, left: 42, right: 42, flexDirection: 'row', justifyContent: 'space-between', fontSize: 7.5, color: T.muted },
 
   brandRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 22 },
-  mark: { width: 20, height: 20, borderRadius: 5, backgroundColor: T.orange, marginRight: 8 },
+  mark: { width: 30, height: 30, marginRight: 8 },
   brand: { fontFamily: 'Runde', fontSize: 14, color: T.ink },
   title: { fontFamily: 'Runde', fontSize: 30, lineHeight: 1.1, marginBottom: 6 },
   sub: { fontSize: 10, color: T.ink2, marginBottom: 16 },
@@ -149,7 +149,7 @@ export default function ReportDocument({ state, spectrogram }: Props) {
 
         {/* Title block */}
         <View style={s.brandRow}>
-          <View style={s.mark} />
+          <Image src={`${window.location.origin}/logo.png`} style={s.mark} />
           <Text style={s.brand}>Tarang<Text style={{ color: T.orange }}>Chakra</Text></Text>
         </View>
         <Text style={s.title}>Signal Analysis Report</Text>

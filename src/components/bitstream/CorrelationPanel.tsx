@@ -2,6 +2,7 @@ import { CartesianGrid, Line, LineChart, ReferenceLine, XAxis, YAxis } from 'rec
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
 import type { CorrelationResult } from '@/types';
 import { AXIS_TICK, C } from '@/lib/chart';
+import InfoTip from '@/components/common/InfoTip';
 import Stat from '@/components/common/Stat';
 import KVTable from '@/components/common/KVTable';
 import { Separator } from '@/components/ui/separator';
@@ -21,7 +22,10 @@ export default function CorrelationPanel({ data, height = 180, compact = false }
       <Separator className="mt-5" />
 
       <div className="mb-1 mt-5 flex items-baseline justify-between gap-3">
-        <span className="text-[13.5px] font-medium">Normalized cross-correlation</span>
+        <span className="flex items-center gap-1.5 text-[13.5px] font-medium">
+          Normalized cross-correlation
+          <InfoTip label="cross-correlation" info={{ what: 'How closely the recovered bits match the reference sequence at each lag.', use: 'confirm alignment. A sharp peak above the threshold means the stream is valid.' }} />
+        </span>
         <span className="text-[12.5px] text-muted-foreground">{data.reference}</span>
       </div>
       <ChartContainer config={config} className="aspect-auto w-full" style={{ height }}>

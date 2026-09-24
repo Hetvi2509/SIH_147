@@ -1,6 +1,8 @@
 import { lazy, Suspense, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { AuthProvider } from './context/AuthContext';
 import { AnalysisProvider } from './context/AnalysisContext';
+import RequireAuth from './components/auth/RequireAuth';
 import AppShell from './components/layout/AppShell';
 import { Skeleton } from './components/ui/skeleton';
 
@@ -17,6 +19,8 @@ const pages = {
   report: () => import('./pages/ReportPage'),
 };
 
+const Login = lazy(() => import('./pages/auth/LoginPage'));
+const Signup = lazy(() => import('./pages/auth/SignupPage'));
 const Dashboard = lazy(pages.dashboard);
 const Visualizations = lazy(pages.visualizations);
 const Parameters = lazy(pages.parameters);
@@ -41,9 +45,21 @@ function PageFallback() {
   );
 }
 
+function ProtectedLayout() {
+  return (
+    <RequireAuth>
+      <AppShell>
+        <Suspense fallback={<PageFallback />}>
+          <Outlet />
+        </Suspense>
+      </AppShell>
+    </RequireAuth>
+  );
+}
+
 export default function App() {
   // After the first page is up, fetch the remaining chunks while the browser is idle,
-  // so moving through the pipeline never waits on the network.
+  // so moving through the pipeline never waits on the network. Only for signed-in users.
   useEffect(() => {
     const warm = () => Object.values(pages).forEach((load) => load());
     const w = window as Window & { requestIdleCallback?: (cb: () => void) => number };
@@ -52,11 +68,13 @@ export default function App() {
   }, []);
 
   return (
-    <AnalysisProvider>
-      <BrowserRouter>
-        <AppShell>
-          <Suspense fallback={<PageFallback />}>
-            <Routes>
+    <AuthProvider>
+      <AnalysisProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<Suspense fallback={null}><Login /></Suspense>} />
+            <Route path="/signup" element={<Suspense fallback={null}><Signup /></Suspense>} />
+            <Route element={<ProtectedLayout />}>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/visualizations" element={<Visualizations />} />
@@ -67,10 +85,11 @@ export default function App() {
               <Route path="/fec" element={<FEC />} />
               <Route path="/bitstream" element={<BitStream />} />
               <Route path="/report" element={<Report />} />
-            </Routes>
-          </Suspense>
-        </AppShell>
-      </BrowserRouter>
-    </AnalysisProvider>
+            </Route>
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </AnalysisProvider>
+    </AuthProvider>
   );
 }

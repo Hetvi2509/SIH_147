@@ -11,6 +11,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import {
   Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
+import UserAvatar from '@/components/auth/UserAvatar';
+import { useAuth } from '@/context/AuthContext';
 import Wordmark from '@/components/common/Wordmark';
 import StatusPill from '@/components/common/StatusPill';
 import { useAnalysis } from '@/context/AnalysisContext';
@@ -29,6 +31,7 @@ const TITLES: Record<string, string> = {
 
 export default function Topbar() {
   const { state, runAnalysis } = useAnalysis();
+  const { user } = useAuth();
   const { pathname } = useLocation();
   const meta = state.fileMetadata;
   const analyzing = state.overallStatus === 'analyzing';
@@ -80,6 +83,16 @@ export default function Topbar() {
           <TooltipContent>Toggle sidebar <Kbd className="ms-1">Ctrl B</Kbd></TooltipContent>
         </Tooltip>
         <Separator orientation="vertical" className="h-5" />
+
+        {user && (
+          <>
+            <div className="flex items-center gap-2.5" title={user.email}>
+              <UserAvatar name={user.name} className="size-8" />
+              <span className="max-w-[9rem] truncate text-[14px] font-medium max-xl:hidden">{user.name}</span>
+            </div>
+            <Separator orientation="vertical" className="h-5" />
+          </>
+        )}
 
         <Breadcrumb className="min-w-0">
           <BreadcrumbList className="flex-nowrap gap-2 text-[14px] sm:gap-2.5">

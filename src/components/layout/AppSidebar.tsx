@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
-  ArrowsClockwise, Binary, Broadcast, CaretDown, CheckCircle, ChartLineUp, CircleNotch, Cpu,
+  ArrowsClockwise, Binary, CaretDown, CheckCircle, ChartLineUp, CircleNotch, Cpu,
   FileText, ShieldCheck, SlidersHorizontal, SquaresFour, WaveSine,
 } from '@phosphor-icons/react';
 import type { Icon } from '@phosphor-icons/react';
@@ -10,6 +10,7 @@ import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarHeader, SidebarMenu, SidebarMenuButton,
   SidebarMenuItem, SidebarRail, useSidebar,
 } from '@/components/ui/sidebar';
+import UserMenu from './UserMenu';
 import Wordmark from '@/components/common/Wordmark';
 import { useAnalysis } from '@/context/AnalysisContext';
 import type { AnalysisStage } from '@/types';
@@ -138,9 +139,7 @@ export default function AppSidebar() {
     <Sidebar collapsible="icon" className="border-r-0 smooth-shadow-ring-xs">
       <SidebarHeader className="h-16 justify-center border-b border-sidebar-border p-0 px-4 group-data-[collapsible=icon]:px-0">
         <div className="flex items-center gap-2.5 group-data-[collapsible=icon]:justify-center">
-          <div className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-primary text-primary-foreground smooth-shadow-xs group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:rounded-lg">
-            <Broadcast weight="bold" className="size-5 group-data-[collapsible=icon]:size-[18px]" />
-          </div>
+          <img src="/logo.png" alt="TarangChakra" width={40} height={40} className="size-10 shrink-0 object-contain group-data-[collapsible=icon]:size-9" />
           <div className="min-w-0 group-data-[collapsible=icon]:hidden">
             <Wordmark className="block font-display text-[18px] leading-none tracking-[-0.01em]" />
             <div className="mt-1.5 text-[11.5px] leading-none text-muted-foreground">Modulation analysis</div>
@@ -161,8 +160,8 @@ export default function AppSidebar() {
         ))}
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-sidebar-border px-4 py-3 group-data-[collapsible=icon]:hidden">
-        <p className="text-[12px] leading-snug text-muted-foreground">SR-Mamba classifier · 14 modulation classes</p>
+      <SidebarFooter className="border-t border-sidebar-border p-3">
+        <UserMenu />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

@@ -26,6 +26,8 @@ from pydantic import BaseModel
 
 from model import SRMambaAMC
 from preprocess import preprocess
+from db import init_pool, close_pool
+from auth import router as auth_router
 
 # -------------------------------------------------------------------
 # Logging
@@ -57,6 +59,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(auth_router)
 
 # -------------------------------------------------------------------
 # Model singleton â€” loaded once at startup
@@ -130,6 +134,12 @@ def _load_model():
 @app.on_event("startup")
 async def startup_event():
     _load_model()
+    init_pool()
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    close_pool()
 
 
 # -------------------------------------------------------------------

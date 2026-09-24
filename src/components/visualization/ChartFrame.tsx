@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { ArrowsOut, MagnifyingGlassMinus, MagnifyingGlassPlus, ArrowCounterClockwise } from '@phosphor-icons/react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import InfoTip from '@/components/common/InfoTip';
 import { useAnalysis } from '@/context/AnalysisContext';
 import { useZoom } from '@/lib/chart';
 import { CHARTS, type ChartId } from './chartRegistry';
@@ -28,7 +29,10 @@ export default function ChartFrame({ id, height, detailed = false, onExpand, cla
     <figure className={cn('group/chart flex min-w-0 flex-col overflow-hidden rounded-2xl bg-card smooth-shadow-ring-xs', className)}>
       <figcaption className="flex items-start justify-between gap-3 px-4 pb-1 pt-3.5">
         <div className="min-w-0">
-          <h3 className="font-display text-[16px] leading-tight tracking-[-0.01em]">{def.title}</h3>
+          <div className="flex items-center gap-1.5">
+            <h3 className="font-display text-[16px] leading-tight tracking-[-0.01em]">{def.title}</h3>
+            <InfoTip info={def.info} label={def.title} />
+          </div>
           <dl className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-[12.5px] leading-5">
             {meta.map(([k, v]) => (
               <div key={k} className="flex gap-1.5">

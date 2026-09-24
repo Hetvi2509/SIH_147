@@ -6,6 +6,7 @@ import { useAnalysis } from '@/context/AnalysisContext';
 import PageHeader from '@/components/common/PageHeader';
 import StatusPill from '@/components/common/StatusPill';
 import EmptyState from '@/components/common/EmptyState';
+import InfoTip from '@/components/common/InfoTip';
 import SummaryBar from '@/components/common/SummaryBar';
 import InstrumentPanel from '@/components/common/Instrument';
 import SectionHeading from '@/components/common/SectionHeading';
@@ -62,7 +63,10 @@ export default function ModulationPage() {
         <div className="grid items-start gap-4 lg:grid-cols-2">
           <Card>
             <CardHeader>
-              <CardTitle>Class probabilities</CardTitle>
+              <CardTitle className="flex items-center gap-1.5">
+                Class probabilities
+                <InfoTip label="class probabilities" info={{ what: 'The classifier score for each modulation class.', use: 'show how decisive the result is. A close runner-up means low certainty.' }} />
+              </CardTitle>
               <CardDescription>Top {cls.topK.length} of {CLASSES.length} classes.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3.5">
