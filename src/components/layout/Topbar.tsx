@@ -7,6 +7,7 @@ import { Kbd } from '@/components/ui/kbd';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { SidebarTrigger } from '@/components/ui/sidebar';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
@@ -74,8 +75,11 @@ export default function Topbar() {
     <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center gap-4 border-b border-border bg-card/90 px-4 backdrop-blur-sm sm:px-6">
       {/* Left: where am I */}
       <div className="flex min-w-0 items-center gap-3">
-        {/* Below md the sidebar is a drawer and the logo is not on screen, so it keeps a trigger. */}
-        <SidebarTrigger className="-ms-1.5 size-8 text-muted-foreground md:hidden" />
+        <Tooltip>
+          <TooltipTrigger asChild><SidebarTrigger className="-ms-1.5 size-8 text-muted-foreground" /></TooltipTrigger>
+          <TooltipContent>Toggle sidebar <Kbd className="ms-1">Ctrl B</Kbd></TooltipContent>
+        </Tooltip>
+        <Separator orientation="vertical" className="h-5" />
 
         <Breadcrumb className="min-w-0">
           <BreadcrumbList className="flex-nowrap gap-2 text-[14px] sm:gap-2.5">
