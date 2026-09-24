@@ -1,45 +1,88 @@
-import { Waves } from 'lucide-react';
-import { useAnalysis } from '../context/AnalysisContext';
-import DemodPanel from '../components/demodulation/DemodPanel';
-import IQWaveform from '../components/visualization/IQWaveform';
-import ConstellationChart from '../components/visualization/ConstellationChart';
-import StatusBadge from '../components/common/StatusBadge';
+import { WarningCircle, WaveSine } from '@phosphor-icons/react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { useAnalysis } from '@/context/AnalysisContext';
+import PageHeader from '@/components/common/PageHeader';
+import StatusPill from '@/components/common/StatusPill';
+import EmptyState from '@/components/common/EmptyState';
+import SummaryBar from '@/components/common/SummaryBar';
+import InstrumentPanel from '@/components/common/Instrument';
+import SectionHeading from '@/components/common/SectionHeading';
+import NextStep from '@/components/common/NextStep';
+import AnalysisGrid from '@/components/visualization/AnalysisGrid';
+import { formatBER, formatSamples } from '@/utils/formatters';
 
 export default function DemodulationPage() {
   const { state } = useAnalysis();
-  const { demodulation } = state;
+  const d = state.demodulation;
 
-  if (!demodulation) {
+  if (!d) {
     return (
-      <div className="page">
-        <div className="empty-state">
-          <div className="empty-state-title">No demodulation data</div>
-          <div className="empty-state-desc">Analyze a signal to run the demodulator.</div>
-        </div>
-      </div>
+      <>
+        <PageHeader title="Demodulation" />
+        <EmptyState icon={<WaveSine weight="duotone" />} title="No demodulation data" description="Analyze a signal to run the demodulator and recover symbols and bits." />
+      </>
     );
   }
 
-  const statusBadge = demodulation.status === 'successful' ? 'completed' : demodulation.status === 'uncertain' ? 'warning' : 'error';
+  const ok = d.status === 'successful';
+  const pill = ok ? 'success' : d.status === 'uncertain' || d.status === 'unsupported' ? 'warning' : 'error';
+  const label = d.status.replace('-', ' ');
 
   return (
-    <div className="page">
-      <div className="page-header">
-        <div>
-          <div className="page-title"><Waves size={18} style={{ color: 'var(--accent-blue)' }} /> Demodulation</div>
-          <div className="page-subtitle">Symbol recovery, bit extraction, and BER estimation</div>
-        </div>
-        <StatusBadge status={statusBadge} label={demodulation.status.toUpperCase().replace('-', ' ')} />
+    <div className="pb-8">
+      <PageHeader
+        title="Demodulation"
+        description="From symbols to bits, and how many of them came through clean."
+        actions={<StatusPill variant={pill}>{ok ? 'Successful' : label}</StatusPill>}
+      />
+
+      <div className="space-y-4">
+        <SummaryBar items={[
+          { key: 'mod', label: 'Modulation', value: d.detectedModulation, tone: 'accent' },
+          { key: 'sym', label: 'Recovered symbols', value: ok ? formatSamples(d.recoveredSymbols) : '—' },
+          { key: 'bits', label: 'Recovered bits', value: ok ? formatSamples(d.recoveredBits) : '—' },
+          { key: 'b1', label: 'BER before decoding', value: ok ? formatBER(d.berBeforeDecoding) : '—', tone: 'warn', grow: 1.2 },
+          { key: 'b2', label: 'BER after decoding', value: ok && d.berAfterDecoding != null ? formatBER(d.berAfterDecoding) : '—', tone: 'good', grow: 1.2 },
+        ]} />
+
+        {(d.status === 'uncertain' || d.status === 'unsupported') && (
+          <Alert className="border-0 bg-warning-soft text-warning">
+            <WarningCircle weight="fill" />
+            <AlertDescription className="text-warning">
+              {d.status === 'uncertain'
+                ? 'Demodulator configuration is uncertain. There is not enough signal information to pick the right parameters; manual configuration may be needed.'
+                : 'This waveform type is not supported by the demodulator.'}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        <InstrumentPanel
+          title="Demodulator"
+          description="How the symbols were decided."
+          groups={[
+            { title: 'Configuration', rows: [
+              ['Detected modulation', d.detectedModulation, 'accent'],
+              ['Demodulator', d.demodulatorFamily],
+              ['Status', label, ok ? 'good' : 'warn'],
+            ]},
+            ...(ok ? [{ title: 'Recovered', rows: [
+              ['Symbols', formatSamples(d.recoveredSymbols)],
+              ['Bits', formatSamples(d.recoveredBits)],
+            ] as [string, string][] }] : []),
+            ...(ok ? [{ title: 'Error rate', rows: [
+              ['Before decoding', formatBER(d.berBeforeDecoding), 'warn'],
+              ['After decoding', d.berAfterDecoding != null ? formatBER(d.berAfterDecoding) : 'N/A', 'good'],
+            ] as [string, string, 'warn' | 'good'][] }] : []),
+          ]}
+        />
       </div>
 
-      <div className="grid-2" style={{ marginBottom: 16 }}>
-        <DemodPanel demod={demodulation} />
-        <div>
-          <ConstellationChart height={320} />
-        </div>
-      </div>
+      <section className="mt-10">
+        <SectionHeading title="Symbol evidence" description="The decision constellation, the waveform and the eye opening." />
+        <AnalysisGrid charts={['constellation', 'iq', 'eye']} cellHeight={220} />
+      </section>
 
-      <IQWaveform height={240} showAmplitude />
+      <NextStep to="/fec" label="FEC / Interleaver" description="Correct errors and undo any interleaving." />
     </div>
   );
 }

@@ -1,226 +1,199 @@
-import { FileText, Download, CheckCircle } from 'lucide-react';
-import { useAnalysis } from '../context/AnalysisContext';
-import StatusBadge from '../components/common/StatusBadge';
+import { Fragment, type ReactNode } from 'react';
+import { toast } from 'sonner';
+import { CheckCircle, DownloadSimple, FilePdf, FileText } from '@phosphor-icons/react';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
+import ChartFrame from '@/components/visualization/ChartFrame';
+import CorrelationPanel from '@/components/bitstream/CorrelationPanel';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { useAnalysis } from '@/context/AnalysisContext';
+import PageHeader from '@/components/common/PageHeader';
+import StatusPill from '@/components/common/StatusPill';
+import SummaryBar from '@/components/common/SummaryBar';
+import EmptyState from '@/components/common/EmptyState';
+import KVTable, { type KVRow } from '@/components/common/KVTable';
 import {
-  formatFileSize, formatSampleRate, formatSamples, formatDuration,
-  formatSNR, formatCFO, formatPhase, formatBER, formatPower
-} from '../utils/formatters';
+  formatBER, formatCFO, formatDuration, formatFileSize, formatPhase, formatPower, formatSNR,
+  formatSampleRate, formatSamples,
+} from '@/utils/formatters';
+
+function Section({ title, note, children }: { title: string; note: string; children: ReactNode }) {
+  return (
+    <section className="grid gap-x-10 gap-y-2 py-7 md:grid-cols-[220px_minmax(0,1fr)]">
+      <div>
+        <h2 className="text-[19px] leading-tight tracking-[-0.01em]">{title}</h2>
+        <p className="mt-1 text-[13px] text-muted-foreground">{note}</p>
+      </div>
+      <div className="min-w-0">{children}</div>
+    </section>
+  );
+}
+
+function Preview({ label, children, tone = '' }: { label: string; children: string; tone?: string }) {
+  return (
+    <div className="mt-4">
+      <div className="mb-1.5 text-[13px] text-muted-foreground">{label}</div>
+      <pre className={`whitespace-pre-wrap break-all rounded-xl bg-secondary/70 p-3.5 font-mono text-[13px] leading-[1.75] ${tone}`}>{children}</pre>
+    </div>
+  );
+}
 
 export default function ReportPage() {
   const { state, exportJSON, exportPDF, exportCSV } = useAnalysis();
-  const { fileMetadata: meta, parameters: p, classification: cls, sync, demodulation: demod, fec, interleaver, ber, overallStatus } = state;
+  const { fileMetadata: meta, parameters: p, classification: cls, sync, demodulation: demod, fec, interleaver, ber, bitStream: bs, pipeline, overallStatus } = state;
+  const complete = overallStatus === 'completed';
 
-  const reportDate = new Date().toLocaleString();
+  if (!cls) {
+    return (
+      <>
+        <PageHeader title="Report" />
+        <EmptyState icon={<FileText weight="duotone" />} title="Nothing to report yet" description="Run an analysis first. The report collects every stage, including the recovered data and correlation." />
+      </>
+    );
+  }
+
+  const date = new Date().toLocaleString();
+  const run = (fn: () => Promise<void>, label: string) => () => {
+    toast.promise(fn(), { loading: `Preparing ${label}…`, success: `${label} downloaded`, error: `${label} export failed` });
+  };
+  const charts = (ids: Parameters<typeof ChartFrame>[0]['id'][], h = 190) => (
+    <div className="mt-5 grid gap-4 md:grid-cols-2">
+      {ids.map((id) => <ChartFrame key={id} id={id} height={h} />)}
+    </div>
+  );
+
+  const sections: { title: string; note: string; rows: KVRow[]; extra?: ReactNode }[] = [
+    { title: 'Signal summary', note: 'Headline results', rows: [
+      ['Signal file', meta?.fileName ?? 'N/A'],
+      ['Detected modulation', cls.modulation, 'accent'],
+      ['Modulation family', cls.family],
+      ['Confidence', `${cls.confidence.toFixed(1)}%`, 'good'],
+      ['Overall status', complete ? 'Analysis completed' : 'Incomplete', complete ? 'good' : 'warn'],
+    ]},
+    ...(meta ? [{ title: 'File information', note: 'Raw metadata', rows: [
+      ['File name', meta.fileName], ['File type', meta.fileType], ['Format', meta.format], ['Layout', meta.layout],
+      ['Data type', meta.dataType], ['Endianness', meta.endianness ?? 'N/A'], ['File size', formatFileSize(meta.fileSize)],
+      ['Sample rate', formatSampleRate(meta.sampleRate)], ['Number of samples', formatSamples(meta.numSamples)], ['Duration', formatDuration(meta.duration)],
+    ] as KVRow[] }] : []),
+    ...(p ? [{ title: 'Signal parameters', note: 'RF, timing and quality', rows: [
+      ['Center frequency', `${p.centerFrequency.toFixed(3)} MHz`, 'accent'], ['Bandwidth', `${p.bandwidth.toFixed(1)} kHz`],
+      ['Occupied bandwidth', `${p.occupiedBandwidth.toFixed(1)} kHz`], ['SNR', formatSNR(p.snr), 'good'], ['Symbol rate', `${p.symbolRate} kSym/s`],
+      ['Carrier offset (CFO)', formatCFO(p.cfo), 'warn'], ['Phase offset', formatPhase(p.phaseOffset), 'warn'], ['EVM', `${p.evm.toFixed(1)}% RMS`],
+      ['Signal power', formatPower(p.signalPower)], ['Noise power', formatPower(p.noisePower)], ['Channel condition', p.channelCondition],
+      ['Modulation quality', p.modulationQuality, p.modulationQuality === 'Good' ? 'good' : 'warn'],
+    ] as KVRow[], extra: charts(['spectrum', 'iq']) }] : []),
+    { title: 'Modulation classification', note: 'AI analysis', rows: [
+      ['Detected modulation', cls.modulation, 'accent'], ['Modulation family', cls.family], ['Confidence', `${cls.confidence.toFixed(1)}%`, 'good'],
+      ['Model version', cls.modelVersion], ['Inference time', `${cls.inferenceTimeMs} ms`],
+      ['Top predictions', cls.topK.map((r) => `${r.modulation} ${r.confidence.toFixed(1)}%`).join(' · ')],
+    ], extra: charts(['constellation']) },
+    ...(sync ? [{ title: 'Synchronization', note: 'Carrier and timing recovery', rows: [
+      ['Carrier lock', sync.carrierLocked ? 'Locked' : 'Failed', sync.carrierLocked ? 'good' : 'bad'],
+      ['Symbol timing lock', sync.timingLocked ? 'Locked' : 'Failed', sync.timingLocked ? 'good' : 'bad'],
+      ['CFO estimate', formatCFO(sync.cfoEstimate), 'warn'], ['Phase offset', formatPhase(sync.phaseOffset), 'warn'],
+      ['Timing offset', `${sync.timingOffset.toFixed(1)} samples`],
+      ['Matched filter', sync.matchedFilterApplied ? 'Applied' : 'Not applied', sync.matchedFilterApplied ? 'good' : 'warn'],
+    ] as KVRow[], extra: charts(['freq-time', 'phase-time']) }] : []),
+    ...(demod ? [{ title: 'Demodulation', note: 'Symbol and bit recovery', rows: [
+      ['Demodulator', demod.demodulatorFamily], ['Status', demod.status, demod.status === 'successful' ? 'good' : 'warn'],
+      ['Recovered symbols', formatSamples(demod.recoveredSymbols)], ['Recovered bits', formatSamples(demod.recoveredBits)],
+      ['BER before decoding', formatBER(demod.berBeforeDecoding), 'warn'],
+      ['BER after decoding', demod.berAfterDecoding != null ? formatBER(demod.berAfterDecoding) : 'N/A', 'good'],
+    ] as KVRow[], extra: charts(['eye', 'waterfall']) }] : []),
+    ...(fec && interleaver ? [{ title: 'FEC and interleaver', note: 'Decoding', rows: [
+      ['FEC detected', fec.detected === true ? 'Yes' : fec.detected === false ? 'No' : 'Unknown', fec.detected ? 'good' : 'default'],
+      ...(fec.detected ? [['FEC family', fec.family, 'accent'], ['Code rate', fec.codeRate], ['Decoding', fec.decodingStatus, fec.decodingStatus === 'successful' ? 'good' : 'bad']] as KVRow[] : []),
+      ['Interleaver detected', interleaver.detected ? 'Yes' : 'No', interleaver.detected ? 'good' : 'default'],
+      ...(interleaver.detected ? [['Interleaver type', interleaver.type ?? '—'], ['Depth', `${interleaver.depth} bits`], ['De-interleaving', interleaver.deinterleavingStatus, 'good']] as KVRow[] : []),
+    ] as KVRow[] }] : []),
+    ...(bs ? [{
+      title: 'Recovered data', note: 'Bit stream analysis, output 1',
+      rows: [
+        ['Total recovered bits', formatSamples(bs.recovered.totalBits)],
+        ['Valid bits', formatSamples(bs.recovered.validBits), 'good'],
+        ['Invalid bits', formatSamples(bs.recovered.invalidBits), bs.recovered.invalidBits > 0 ? 'warn' : 'default'],
+        ['Encoding', bs.recovered.encoding],
+      ] as KVRow[],
+      extra: bs.recovered.totalBits > 0 ? (
+        <>
+          <Preview label={`Bit sequence, first ${Math.min(64, bs.recovered.previewBits)} bits`}>{bs.recovered.bitPreview.slice(0, 64).match(/.{1,8}/g)?.join(' ') ?? ''}</Preview>
+          <Preview label="Hex preview" tone="text-primary">{bs.recovered.hexPreview.split(' ').slice(0, 16).join(' ')}</Preview>
+        </>
+      ) : undefined,
+    }, {
+      title: 'Correlation', note: 'Bit stream analysis, output 2',
+      rows: [
+        ['Correlation score', bs.correlation.score.toFixed(3), bs.correlation.detected ? 'good' : 'warn'],
+        ['Peak lag', `${bs.correlation.peakLag} symbols`],
+        ['Sidelobe ratio', `${bs.correlation.sidelobeRatioDb.toFixed(1)} dB`],
+        ['Reference', bs.correlation.reference],
+        ['Reference match', bs.correlation.detected ? 'Detected' : 'Not detected', bs.correlation.detected ? 'good' : 'warn'],
+      ] as KVRow[],
+      extra: <div className="mt-4 rounded-2xl bg-card p-4 smooth-shadow-ring-xs"><CorrelationPanel data={bs.correlation} height={170} compact /></div>,
+    }] : []),
+    ...(ber ? [{ title: 'BER results', note: 'Decoder performance', rows: [
+      ['BER before FEC', formatBER(ber.berBeforeFEC), 'warn'], ['BER after FEC', ber.berAfterFEC != null ? formatBER(ber.berAfterFEC) : 'N/A', 'good'],
+      ['Total bits analyzed', formatSamples(ber.totalBits)], ['Error bits (raw)', formatSamples(ber.errorBits)],
+      ...(ber.decodedBits ? [['Decoded bits', formatSamples(ber.decodedBits), 'good']] as KVRow[] : []),
+    ] as KVRow[] }] : []),
+    { title: 'Processing stages', note: 'Time per stage', rows: [
+      ...pipeline.map((s): KVRow => [s.name, s.status === 'completed' && s.duration !== undefined ? `${s.duration} ms` : s.status]),
+      ['Total', `${pipeline.reduce((t, s) => t + (s.duration ?? 0), 0)} ms`],
+    ]},
+  ];
 
   return (
-    <div className="page">
-      <div className="page-header">
-        <div>
-          <div className="page-title"><FileText size={18} style={{ color: 'var(--accent-blue)' }} /> Signal Analysis Report</div>
-          <div className="page-subtitle">Generated: {reportDate}</div>
+    <div>
+      <PageHeader
+        title="Report"
+        description={`Generated ${date}`}
+        actions={
+          <>
+            <StatusPill variant={complete ? 'success' : 'muted'}>{complete ? 'Analysis complete' : 'Incomplete'}</StatusPill>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild><Button variant="outline"><DownloadSimple /> Data</Button></DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={run(exportCSV, 'CSV')}>CSV</DropdownMenuItem>
+                <DropdownMenuItem onSelect={run(exportJSON, 'JSON')}>JSON</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button onClick={run(exportPDF, 'PDF report')}><FilePdf weight="bold" /> Download PDF</Button>
+          </>
+        }
+      />
+
+      {complete && (
+        <div className="mb-4 flex items-center gap-3 rounded-xl bg-success-soft px-5 py-3.5 text-success">
+          <CheckCircle weight="fill" className="size-5" />
+          <span className="font-display text-[18px]">Analysis completed successfully</span>
+          <span className="ms-auto hidden text-[13px] sm:inline">All {pipeline.length} stages passed</span>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <StatusBadge status={overallStatus === 'completed' ? 'completed' : 'pending'} label={overallStatus === 'completed' ? 'ANALYSIS COMPLETE' : 'INCOMPLETE'} />
-          <button className="btn btn-secondary btn-sm" onClick={exportCSV}>
-            <Download size={12} /> CSV
-          </button>
-          <button className="btn btn-secondary btn-sm" onClick={exportJSON}>
-            <Download size={12} /> JSON
-          </button>
-          <button className="btn btn-primary btn-sm" onClick={exportPDF}>
-            <Download size={12} /> PDF Report
-          </button>
-        </div>
+      )}
+
+      <div className="mb-4">
+        <SummaryBar items={[
+          { key: 'mod', label: 'Modulation', value: cls.modulation, tone: 'accent' },
+          { key: 'conf', label: 'Confidence', value: cls.confidence.toFixed(1), unit: '%' },
+          { key: 'snr', label: 'SNR', value: p ? p.snr.toFixed(1) : '—', unit: 'dB' },
+          { key: 'ber', label: 'BER after FEC', value: ber?.berAfterFEC != null ? formatBER(ber.berAfterFEC) : '—', tone: 'good', grow: 1.2 },
+          { key: 'bits', label: 'Recovered bits', value: bs ? formatSamples(bs.recovered.totalBits) : '—', grow: 1.2 },
+        ]} />
       </div>
 
-      {/* Overall status banner */}
-      {overallStatus === 'completed' && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', background: 'var(--color-success-bg)', border: '1px solid rgba(76,175,80,0.3)', borderRadius: 'var(--radius-md)', marginBottom: 16 }}>
-          <CheckCircle size={16} style={{ color: 'var(--color-success)' }} />
-          <span style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--color-success)' }}>Analysis Completed Successfully</span>
-          <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginLeft: 'auto' }}>All stages passed · {reportDate}</span>
-        </div>
-      )}
+      <Card className="px-6 py-0 md:px-8">
+        {sections.map((s, i) => (
+          <Fragment key={s.title}>
+            {i > 0 && <Separator />}
+            <Section title={s.title} note={s.note}>
+              <KVTable rows={s.rows} />
+              {s.extra}
+            </Section>
+          </Fragment>
+        ))}
+      </Card>
 
-      {/* 1. Signal Summary */}
-      <div className="report-section">
-        <div className="report-section-title">1. Signal Summary</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '8px 20px' }}>
-          {[
-            { k: 'Signal File', v: meta?.fileName ?? 'N/A' },
-            { k: 'Format', v: meta?.format ?? 'N/A' },
-            { k: 'Sample Rate', v: meta ? formatSampleRate(meta.sampleRate) : 'N/A' },
-            { k: 'Duration', v: meta ? formatDuration(meta.duration) : 'N/A' },
-            { k: 'Detected Modulation', v: cls?.modulation ?? 'Unknown', accent: 'var(--accent-cyan)' },
-            { k: 'Modulation Family', v: cls?.family ?? 'Unknown', accent: 'var(--accent-blue)' },
-            { k: 'Confidence', v: cls ? `${cls.confidence.toFixed(1)}%` : 'N/A', accent: 'var(--color-success)' },
-            { k: 'Overall Status', v: overallStatus === 'completed' ? 'Analysis Completed' : 'Incomplete', accent: 'var(--color-success)' },
-          ].map(({ k, v, accent }) => (
-            <div key={k} style={{ borderBottom: '1px solid var(--border-subtle)', paddingBottom: 8 }}>
-              <div style={{ fontSize: '0.67rem', textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)', marginBottom: 2 }}>{k}</div>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: accent ?? 'var(--text-primary)' }}>{v}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* 2. File Information */}
-      {meta && (
-        <div className="report-section">
-          <div className="report-section-title">2. File Information</div>
-          <table className="kv-table">
-            <tbody>
-              <tr><td>File Name</td><td>{meta.fileName}</td></tr>
-              <tr><td>File Type</td><td>{meta.fileType}</td></tr>
-              <tr><td>Format</td><td>{meta.format}</td></tr>
-              <tr><td>Layout</td><td>{meta.layout}</td></tr>
-              <tr><td>Data Type</td><td>{meta.dataType}</td></tr>
-              <tr><td>Endianness</td><td>{meta.endianness ?? 'N/A'}</td></tr>
-              <tr><td>File Size</td><td>{formatFileSize(meta.fileSize)}</td></tr>
-              <tr><td>Sample Rate</td><td>{formatSampleRate(meta.sampleRate)}</td></tr>
-              <tr><td>Number of Samples</td><td>{formatSamples(meta.numSamples)}</td></tr>
-              <tr><td>Duration</td><td>{formatDuration(meta.duration)}</td></tr>
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* 3. Extracted Parameters */}
-      {p && (
-        <div className="report-section">
-          <div className="report-section-title">3. Extracted Signal Parameters</div>
-          <table className="kv-table">
-            <tbody>
-              <tr><td>Center Frequency</td><td style={{ color: 'var(--accent-cyan)' }}>{p.centerFrequency.toFixed(3)} MHz</td></tr>
-              <tr><td>Bandwidth</td><td>{p.bandwidth.toFixed(1)} kHz</td></tr>
-              <tr><td>Occupied Bandwidth</td><td>{p.occupiedBandwidth.toFixed(1)} kHz</td></tr>
-              <tr><td>SNR</td><td style={{ color: 'var(--color-success)' }}>{formatSNR(p.snr)}</td></tr>
-              <tr><td>Symbol Rate</td><td>{p.symbolRate} kSym/s</td></tr>
-              <tr><td>Carrier Freq Offset (CFO)</td><td style={{ color: 'var(--color-warning)' }}>{formatCFO(p.cfo)}</td></tr>
-              <tr><td>Phase Offset</td><td style={{ color: 'var(--color-warning)' }}>{formatPhase(p.phaseOffset)}</td></tr>
-              <tr><td>EVM</td><td>{p.evm.toFixed(1)}% RMS</td></tr>
-              <tr><td>Signal Power</td><td>{formatPower(p.signalPower)}</td></tr>
-              <tr><td>Noise Power</td><td>{formatPower(p.noisePower)}</td></tr>
-              <tr><td>Channel Condition</td><td>{p.channelCondition}</td></tr>
-              <tr><td>Modulation Quality</td><td style={{ color: p.modulationQuality === 'Good' ? 'var(--color-success)' : 'var(--color-warning)' }}>{p.modulationQuality}</td></tr>
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* 4. Modulation Classification */}
-      {cls && (
-        <div className="report-section">
-          <div className="report-section-title">4. Modulation Classification</div>
-          <table className="kv-table">
-            <tbody>
-              <tr><td>Detected Modulation</td><td style={{ color: 'var(--accent-cyan)', fontWeight: 700, fontSize: '0.95rem' }}>{cls.modulation}</td></tr>
-              <tr><td>Modulation Family</td><td style={{ color: 'var(--accent-blue)' }}>{cls.family}</td></tr>
-              <tr><td>Confidence</td><td style={{ color: 'var(--color-success)' }}>{cls.confidence.toFixed(1)}%</td></tr>
-              <tr><td>AMC Model Version</td><td>{cls.modelVersion}</td></tr>
-              <tr><td>Inference Time</td><td>{cls.inferenceTimeMs} ms</td></tr>
-            </tbody>
-          </table>
-          <div style={{ marginTop: 10, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-            Top-K results: {cls.topK.map((r) => `${r.modulation} (${r.confidence.toFixed(1)}%)`).join(' · ')}
-          </div>
-        </div>
-      )}
-
-      {/* 5. Synchronization */}
-      {sync && (
-        <div className="report-section">
-          <div className="report-section-title">5. Synchronization</div>
-          <table className="kv-table">
-            <tbody>
-              <tr><td>Carrier Lock</td><td style={{ color: sync.carrierLocked ? 'var(--color-success)' : 'var(--color-error)' }}>{sync.carrierLocked ? '✓ Locked' : '✕ Failed'}</td></tr>
-              <tr><td>Symbol Timing Lock</td><td style={{ color: sync.timingLocked ? 'var(--color-success)' : 'var(--color-error)' }}>{sync.timingLocked ? '✓ Locked' : '✕ Failed'}</td></tr>
-              <tr><td>CFO Estimate</td><td style={{ color: 'var(--color-warning)' }}>{formatCFO(sync.cfoEstimate)}</td></tr>
-              <tr><td>Phase Offset</td><td style={{ color: 'var(--color-warning)' }}>{formatPhase(sync.phaseOffset)}</td></tr>
-              <tr><td>Timing Offset</td><td>{sync.timingOffset.toFixed(1)} samples</td></tr>
-              <tr><td>Matched Filter</td><td style={{ color: sync.matchedFilterApplied ? 'var(--color-success)' : 'var(--color-warning)' }}>{sync.matchedFilterApplied ? '✓ Applied' : '○ Not Applied'}</td></tr>
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* 6. Demodulation */}
-      {demod && (
-        <div className="report-section">
-          <div className="report-section-title">6. Demodulation</div>
-          <table className="kv-table">
-            <tbody>
-              <tr><td>Detected Modulation</td><td style={{ color: 'var(--accent-cyan)' }}>{demod.detectedModulation}</td></tr>
-              <tr><td>Demodulator</td><td>{demod.demodulatorFamily}</td></tr>
-              <tr><td>Status</td><td style={{ color: demod.status === 'successful' ? 'var(--color-success)' : 'var(--color-warning)' }}>{demod.status === 'successful' ? '✓ Successful' : '⚠ ' + demod.status}</td></tr>
-              <tr><td>Recovered Symbols</td><td>{formatSamples(demod.recoveredSymbols)}</td></tr>
-              <tr><td>Recovered Bits</td><td>{formatSamples(demod.recoveredBits)}</td></tr>
-              <tr><td>BER (Before Decoding)</td><td style={{ color: 'var(--color-warning)' }}>{formatBER(demod.berBeforeDecoding)}</td></tr>
-              <tr><td>BER (After Decoding)</td><td style={{ color: 'var(--color-success)' }}>{demod.berAfterDecoding != null ? formatBER(demod.berAfterDecoding) : 'N/A'}</td></tr>
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* 7. FEC & Interleaver */}
-      {fec && interleaver && (
-        <div className="report-section">
-          <div className="report-section-title">7. FEC & Interleaver</div>
-          <table className="kv-table">
-            <tbody>
-              <tr><td>FEC Detected</td><td style={{ color: fec.detected ? 'var(--color-success)' : 'var(--text-muted)' }}>{fec.detected === true ? '✓ Yes' : fec.detected === false ? '○ No' : '? Unknown'}</td></tr>
-              {fec.detected && <>
-                <tr><td>FEC Family</td><td style={{ color: 'var(--accent-cyan)' }}>{fec.family}</td></tr>
-                <tr><td>Code Rate</td><td>{fec.codeRate}</td></tr>
-                <tr><td>Decoding</td><td style={{ color: fec.decodingStatus === 'successful' ? 'var(--color-success)' : 'var(--color-error)' }}>{fec.decodingStatus === 'successful' ? '✓ Successful' : fec.decodingStatus}</td></tr>
-              </>}
-              <tr><td>Interleaver Detected</td><td style={{ color: interleaver.detected ? 'var(--color-success)' : 'var(--text-muted)' }}>{interleaver.detected === true ? '✓ Yes' : '○ No'}</td></tr>
-              {interleaver.detected && <>
-                <tr><td>Interleaver Type</td><td>{interleaver.type}</td></tr>
-                <tr><td>Depth</td><td>{interleaver.depth} bits</td></tr>
-                <tr><td>De-interleaving</td><td style={{ color: 'var(--color-success)' }}>✓ {interleaver.deinterleavingStatus}</td></tr>
-              </>}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* 8. BER Results */}
-      {ber && (
-        <div className="report-section">
-          <div className="report-section-title">8. BER Results</div>
-          <table className="kv-table">
-            <tbody>
-              <tr><td>BER Before FEC</td><td style={{ color: 'var(--color-warning)', fontWeight: 600 }}>{formatBER(ber.berBeforeFEC)}</td></tr>
-              <tr><td>BER After FEC</td><td style={{ color: 'var(--color-success)', fontWeight: 600 }}>{ber.berAfterFEC != null ? formatBER(ber.berAfterFEC) : 'N/A'}</td></tr>
-              <tr><td>Total Bits Analyzed</td><td>{formatSamples(ber.totalBits)}</td></tr>
-              <tr><td>Error Bits (Raw)</td><td>{formatSamples(ber.errorBits)}</td></tr>
-              {ber.decodedBits && <tr><td>Successfully Decoded Bits</td><td style={{ color: 'var(--color-success)' }}>{formatSamples(ber.decodedBits)}</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Export */}
-      <div className="card card-sm">
-        <div className="card-header">
-          <span className="card-title">Export Analysis Report</span>
-        </div>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <button className="btn btn-primary" onClick={exportPDF}>
-            <Download size={13} /> Download PDF Report
-          </button>
-          <button className="btn btn-secondary" onClick={exportCSV}>
-            <Download size={13} /> Export CSV
-          </button>
-          <button className="btn btn-secondary" onClick={exportJSON}>
-            <Download size={13} /> Export JSON
-          </button>
-        </div>
-        <div style={{ marginTop: 8, fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-          Note: PDF/CSV export requires backend connection. JSON export available in demo mode.
-        </div>
-      </div>
+      <p className="mt-4 text-[13px] text-muted-foreground">The PDF contains every section and chart on this page, generated in your browser.</p>
     </div>
   );
 }

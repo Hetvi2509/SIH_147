@@ -1,72 +1,91 @@
-import { BarChart2 } from 'lucide-react';
-import VisualizationWorkspace from '../components/visualization/VisualizationWorkspace';
-import { useAnalysis } from '../context/AnalysisContext';
+import { useState } from 'react';
+import { ChartLineUp } from '@phosphor-icons/react';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import PageHeader from '@/components/common/PageHeader';
+import EmptyState from '@/components/common/EmptyState';
+import SectionHeading from '@/components/common/SectionHeading';
+import SummaryBar from '@/components/common/SummaryBar';
+import NextStep from '@/components/common/NextStep';
+import AnalysisGrid from '@/components/visualization/AnalysisGrid';
+import DetailWorkspace from '@/components/visualization/DetailWorkspace';
+import { CHART_ORDER } from '@/components/visualization/chartRegistry';
+import { useAnalysis } from '@/context/AnalysisContext';
+import { formatSampleRate, formatSamples } from '@/utils/formatters';
 
 export default function VisualizationsPage() {
   const { state } = useAnalysis();
+  const [view, setView] = useState<'grid' | 'detail'>('grid');
+  const meta = state.fileMetadata;
+  const p = state.parameters;
+
+  if (!meta) {
+    return (
+      <>
+        <PageHeader title="Visualizations" />
+        <EmptyState icon={<ChartLineUp weight="duotone" />} title="No signal loaded" description="Load an IQ recording on the dashboard to see its waveform, spectrum, spectrogram and constellation." />
+      </>
+    );
+  }
+
+  const dur = meta.duration;
+  const segLen = state.segmentEnd - state.segmentStart;
+  const ticks = [0, 0.25, 0.5, 0.75, 1];
 
   return (
-    <div className="page">
-      <div className="page-header">
-        <div>
-          <div className="page-title"><BarChart2 size={18} style={{ color: 'var(--accent-blue)' }} /> Signal Visualizations</div>
-          <div className="page-subtitle">
-            Multi-domain signal analysis workspace
-            {state.fileMetadata && (
-              <span style={{ marginLeft: 12, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
-                · {state.fileMetadata.fileName}
-              </span>
-            )}
-          </div>
-        </div>
-        {/* Segment info */}
-        {state.fileMetadata && (
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Segment:</span>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', color: 'var(--text-primary)' }}>
-              {state.segmentStart.toFixed(2)}s – {state.segmentEnd.toFixed(2)}s
-            </span>
-          </div>
-        )}
+    <div className="pb-8">
+      <PageHeader
+        title="Visualizations"
+        description={`Every domain of ${meta.fileName}, side by side.`}
+        actions={
+          <ToggleGroup type="single" variant="outline" size="sm" value={view} onValueChange={(v) => v && setView(v as 'grid' | 'detail')} aria-label="View mode">
+            <ToggleGroupItem value="grid" className="px-4">Grid</ToggleGroupItem>
+            <ToggleGroupItem value="detail" className="px-4">Detail</ToggleGroupItem>
+          </ToggleGroup>
+        }
+      />
+
+      <div className="space-y-4">
+        <SummaryBar items={[
+          { key: 'fs', label: 'Sample rate', value: formatSampleRate(meta.sampleRate).replace(/\s*MS\/s/, ''), unit: 'MS/s' },
+          { key: 'n', label: 'Samples', value: formatSamples(meta.numSamples) },
+          { key: 'dur', label: 'Duration', value: dur.toFixed(2), unit: 's' },
+          { key: 'fc', label: 'Center frequency', value: p ? p.centerFrequency.toFixed(3) : '—', unit: 'MHz', tone: 'accent' },
+          { key: 'seg', label: 'Segment', value: segLen.toFixed(2), unit: 's', note: `${state.segmentStart.toFixed(2)} to ${state.segmentEnd.toFixed(2)} s` },
+        ]} />
+
+        <Card className="pb-10">
+          <CardHeader>
+            <CardTitle>Signal timeline</CardTitle>
+            <CardDescription>The highlighted region is what every plot below shows.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="relative h-8 rounded-lg bg-secondary">
+              <div
+                className="absolute inset-y-0 rounded-lg bg-primary/15 ring-1 ring-inset ring-primary/40"
+                style={{ left: `${(state.segmentStart / dur) * 100}%`, width: `${(segLen / dur) * 100}%` }}
+              />
+              {ticks.map((t) => (
+                <div key={t} className="absolute inset-y-0 border-s border-border" style={{ left: `${t * 100}%` }}>
+                  <span className={`tnum absolute top-9 text-[12px] text-muted-foreground ${t === 0 ? '' : t === 1 ? '-translate-x-full' : '-translate-x-1/2'}`}>
+                    {(t * dur).toFixed(2)} s
+                  </span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Timeline selector */}
-      <div className="timeline-selector" style={{ marginBottom: 16 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <div style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)' }}>
-            Signal Timeline
-          </div>
-          <div style={{ display: 'flex', gap: 12, fontSize: '0.72rem', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
-            <span>Start: <span style={{ color: 'var(--accent-blue)' }}>{state.segmentStart.toFixed(2)} s</span></span>
-            <span>End: <span style={{ color: 'var(--accent-blue)' }}>{state.segmentEnd.toFixed(2)} s</span></span>
-            <span>Duration: <span style={{ color: 'var(--text-primary)' }}>{(state.segmentEnd - state.segmentStart).toFixed(2)} s</span></span>
-          </div>
-        </div>
-        <div className="timeline-track">
-          <div
-            className="timeline-selection"
-            style={{
-              left: `${(state.segmentStart / (state.fileMetadata?.duration ?? 4.37)) * 100}%`,
-              width: `${((state.segmentEnd - state.segmentStart) / (state.fileMetadata?.duration ?? 4.37)) * 100}%`,
-            }}
-          />
-          {/* Time markers */}
-          {[0, 0.25, 0.5, 0.75, 1].map((t) => {
-            const dur = state.fileMetadata?.duration ?? 4.37;
-            return (
-              <div key={t} style={{ position: 'absolute', left: `${t * 100}%`, top: 0, bottom: 0, borderLeft: '1px solid rgba(37,54,80,0.5)' }}>
-                <span style={{ position: 'absolute', bottom: -16, left: 2, fontSize: '0.6rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
-                  {(t * dur).toFixed(2)}s
-                </span>
-              </div>
-            );
-          })}
-        </div>
-        <div style={{ marginTop: 24 }} />
-      </div>
+      <section className="mt-10">
+        <SectionHeading
+          title={view === 'grid' ? 'All views' : 'Detail view'}
+          description={view === 'grid' ? 'Open any plot for zoom tools.' : 'One plot at a time, large, with zoom.'}
+        />
+        {view === 'grid' ? <AnalysisGrid charts={CHART_ORDER} cellHeight={230} /> : <DetailWorkspace />}
+      </section>
 
-      {/* Full visualization workspace */}
-      <VisualizationWorkspace defaultTab="spectrum" />
+      <NextStep to="/parameters" label="Parameters" description="See the measurements behind these plots." />
     </div>
   );
 }

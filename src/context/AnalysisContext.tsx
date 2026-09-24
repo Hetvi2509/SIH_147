@@ -1,10 +1,10 @@
-﻿// ============================================================
-// Analysis Context â€” Global application state
+// ============================================================
+// Analysis Context — Global application state
 // ============================================================
 
 import React, { createContext, useContext, useReducer, useCallback, type ReactNode } from 'react';
 import type { AnalysisState, PipelineStage, StageStatus } from '../types';
-import { MOCK_INITIAL_STATE, MOCK_PIPELINE } from '../data/mockAnalysis';
+import { MOCK_INITIAL_STATE, MOCK_COMPLETED_STATE, MOCK_PIPELINE, USE_STATIC_DATA } from '../data/mockAnalysis';
 import * as analysisService from '../services/analysisService';
 
 // ---------------------------------------------------------------
@@ -81,7 +81,7 @@ const AnalysisContext = createContext<AnalysisContextValue | null>(null);
 // Provider
 // ---------------------------------------------------------------
 export function AnalysisProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, MOCK_INITIAL_STATE);
+  const [state, dispatch] = useReducer(reducer, USE_STATIC_DATA ? MOCK_COMPLETED_STATE : MOCK_INITIAL_STATE);
 
   const updateStage = (id: string, status: StageStatus, duration?: number) =>
     dispatch({ type: 'UPDATE_PIPELINE_STAGE', payload: { id, status, duration } });
@@ -103,12 +103,12 @@ export function AnalysisProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'SET_ERROR', payload: null });
 
     try {
-      // Stage 1 â€” File input
+      // Stage 1 — File input
       updateStage('file-input', 'processing');
       await new Promise((r) => setTimeout(r, 350));
       updateStage('file-input', 'completed', 350);
 
-      // Stage 2 â€” Preprocessing
+      // Stage 2 — Preprocessing
       updateStage('preprocessing', 'processing');
       await new Promise((r) => setTimeout(r, 500));
       updateStage('preprocessing', 'completed', 500);
@@ -123,17 +123,17 @@ export function AnalysisProvider({ children }: { children: ReactNode }) {
       const params = await analysisService.getParameters(state.analysisId);
       updateStage('parameter-extraction', 'completed', 800);
 
-      // Stage 5 â€” Synchronization (derived from classification)
+      // Stage 5 — Synchronization (derived from classification)
       updateStage('synchronization', 'processing');
       const sync = await analysisService.getSynchronization(state.analysisId);
       updateStage('synchronization', 'completed', 600);
 
-      // Stage 6 â€” Demodulation
+      // Stage 6 — Demodulation
       updateStage('demodulation', 'processing');
       const demod = await analysisService.getDemodulation(state.analysisId);
       updateStage('demodulation', 'completed', 450);
 
-      // Stage 7 â€” FEC / Interleaver
+      // Stage 7 — FEC / Interleaver
       updateStage('fec-interleaver', 'processing');
       const [fec, interleaver, ber] = await Promise.all([
         analysisService.getFEC(state.analysisId),
@@ -142,14 +142,20 @@ export function AnalysisProvider({ children }: { children: ReactNode }) {
       ]);
       updateStage('fec-interleaver', 'completed', 400);
 
-      // Stage 8 â€” Final report
+      // Stage 8 — Bit stream analysis (recovered data + correlation)
+      updateStage('bit-stream-analysis', 'processing');
+      const t0 = performance.now();
+      const bitStream = await analysisService.getBitStream(state.analysisId);
+      updateStage('bit-stream-analysis', 'completed', Math.round(performance.now() - t0));
+
+      // Stage 9 — Final report
       updateStage('final-report', 'processing');
       await new Promise((r) => setTimeout(r, 200));
       updateStage('final-report', 'completed', 200);
 
       dispatch({
         type: 'ANALYSIS_COMPLETED',
-        payload: { parameters: params, classification, sync, demodulation: demod, fec, interleaver, ber },
+        payload: { parameters: params, classification, sync, demodulation: demod, fec, interleaver, ber, bitStream },
       });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Analysis failed. Please try again.';
@@ -173,15 +179,15 @@ export function AnalysisProvider({ children }: { children: ReactNode }) {
   const reset = useCallback(() => dispatch({ type: 'RESET' }), []);
 
   const exportJSON = useCallback(async () => {
-    if (state.analysisId) await analysisService.exportJSON(state.analysisId);
-  }, [state.analysisId]);
+    if (state.analysisId) await analysisService.exportJSON(state.analysisId, state);
+  }, [state]);
 
   const exportPDF = useCallback(async () => {
-    if (state.analysisId) await analysisService.exportPDF(state.analysisId);
-  }, [state.analysisId]);
+    if (state.analysisId) await analysisService.exportPDF(state.analysisId, state);
+  }, [state]);
 
   const exportCSV = useCallback(async () => {
-    if (state.analysisId) await analysisService.exportCSV(state.analysisId);
+    if (state.analysisId) await analysisService.exportCSV(state.analysisId, state);
   }, [state.analysisId]);
 
   return (

@@ -1,5 +1,5 @@
-﻿// ============================================================
-// RF Signal Analysis Dashboard â€” Type Definitions
+// ============================================================
+// RF Signal Analysis Dashboard — Type Definitions
 // ============================================================
 
 export type AnalysisStage =
@@ -10,6 +10,7 @@ export type AnalysisStage =
   | 'synchronization'
   | 'demodulation'
   | 'fec-interleaver'
+  | 'bit-stream-analysis'
   | 'final-report';
 
 export type StageStatus = 'pending' | 'processing' | 'completed' | 'warning' | 'failed';
@@ -138,6 +139,34 @@ export interface PipelineStage {
   message?: string;
 }
 
+export interface RecoveredData {
+  totalBits: number;
+  validBits: number;
+  invalidBits: number;
+  previewBits: number;
+  bitPreview: string;   // first previewBits of the recovered stream, '0'/'1'
+  hexPreview: string;
+  encoding: string;
+}
+
+export interface CorrelationPoint { lag: number; value: number }
+
+export interface CorrelationResult {
+  score: number;            // normalised peak, 0..1
+  peakLag: number;          // symbols
+  reference: string;
+  threshold: number;
+  detected: boolean;
+  sidelobeRatioDb: number;
+  series: CorrelationPoint[];
+}
+
+export interface BitStreamResult {
+  status: 'completed' | 'unavailable';
+  recovered: RecoveredData;
+  correlation: CorrelationResult;
+}
+
 export interface AnalysisState {
   fileMetadata: FileMetadata | null;
   parameters: SignalParameters | null;
@@ -147,6 +176,7 @@ export interface AnalysisState {
   fec: FECResult | null;
   interleaver: InterleaverResult | null;
   ber: BERResult | null;
+  bitStream: BitStreamResult | null;
   pipeline: PipelineStage[];
   analysisId: string | null;
   isLoading: boolean;

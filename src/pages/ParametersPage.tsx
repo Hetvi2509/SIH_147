@@ -1,11 +1,14 @@
-import { Sliders } from 'lucide-react';
-import { useAnalysis } from '../context/AnalysisContext';
-import ParameterCard from '../components/common/ParameterCard';
-import StatusBadge from '../components/common/StatusBadge';
-import {
-  formatCFO, formatPhase, formatSNR, formatSampleRate,
-  formatSymbolRate, formatPower, formatEVM
-} from '../utils/formatters';
+import { SlidersHorizontal } from '@phosphor-icons/react';
+import { useAnalysis } from '@/context/AnalysisContext';
+import PageHeader from '@/components/common/PageHeader';
+import StatusPill from '@/components/common/StatusPill';
+import EmptyState from '@/components/common/EmptyState';
+import SummaryBar from '@/components/common/SummaryBar';
+import InstrumentPanel from '@/components/common/Instrument';
+import SectionHeading from '@/components/common/SectionHeading';
+import NextStep from '@/components/common/NextStep';
+import AnalysisGrid from '@/components/visualization/AnalysisGrid';
+import { formatCFO, formatEVM, formatPhase, formatPower, formatSampleRate } from '@/utils/formatters';
 
 export default function ParametersPage() {
   const { state } = useAnalysis();
@@ -13,94 +16,94 @@ export default function ParametersPage() {
 
   if (!p) {
     return (
-      <div className="page">
-        <div className="empty-state">
-          <div className="empty-state-title">No parameters available</div>
-          <div className="empty-state-desc">Upload and analyze a signal to extract parameters.</div>
-        </div>
-      </div>
+      <>
+        <PageHeader title="Parameters" />
+        <EmptyState icon={<SlidersHorizontal weight="duotone" />} title="No parameters yet" description="Load a file on the dashboard and analyze it. Center frequency, bandwidth, SNR and the rest are extracted in the second stage." />
+      </>
     );
   }
 
+  const quality = p.modulationQuality === 'Good' || p.modulationQuality === 'Excellent' ? 'good' : p.modulationQuality === 'Moderate' ? 'warn' : 'bad';
+
   return (
-    <div className="page">
-      <div className="page-header">
-        <div>
-          <div className="page-title"><Sliders size={18} style={{ color: 'var(--accent-blue)' }} /> Signal Parameters</div>
-          <div className="page-subtitle">Automatically extracted RF signal characteristics</div>
+    <div className="pb-8">
+      <PageHeader
+        title="Parameters"
+        description="RF characteristics extracted from the signal before classification."
+        actions={<StatusPill variant="success">Extracted</StatusPill>}
+      />
+
+      <div className="space-y-4">
+        <SummaryBar items={[
+          { key: 'fc', label: 'Center frequency', value: p.centerFrequency.toFixed(3), unit: 'MHz', tone: 'accent' },
+          { key: 'bw', label: 'Bandwidth', value: p.bandwidth.toFixed(1), unit: 'kHz' },
+          { key: 'sym', label: 'Symbol rate', value: p.symbolRate, unit: 'kSym/s' },
+          { key: 'snr', label: 'SNR', value: p.snr.toFixed(1), unit: 'dB', tone: 'good' },
+          { key: 'q', label: 'Modulation quality', value: p.modulationQuality, tone: quality === 'good' ? 'good' : quality === 'warn' ? 'warn' : 'default', note: p.channelCondition },
+        ]} />
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <InstrumentPanel
+            title="RF and timing"
+            description="Where the signal sits and how fast it runs."
+            groups={[
+              { title: 'RF', rows: [
+                ['Center frequency', `${p.centerFrequency.toFixed(3)} MHz`, 'accent'],
+                ['Bandwidth', `${p.bandwidth.toFixed(1)} kHz`],
+                ['Occupied bandwidth', `${p.occupiedBandwidth.toFixed(1)} kHz`],
+              ]},
+              { title: 'Timing', rows: [
+                ['Sample rate', formatSampleRate(p.sampleRate)],
+                ['Symbol rate', `${p.symbolRate} kSym/s`],
+                ['Duration', `${p.duration.toFixed(2)} s`],
+              ]},
+            ]}
+          />
+          <InstrumentPanel
+            title="Signal quality"
+            description="How clean the signal is, and how far the carrier has drifted."
+            groups={[
+              { title: 'Quality', rows: [
+                ['SNR', `${p.snr.toFixed(1)} dB`, 'good'],
+                ['EVM', formatEVM(p.evm)],
+                ['Channel', p.channelCondition],
+              ]},
+              { title: 'Offsets', rows: [
+                ['Carrier offset', formatCFO(p.cfo), 'warn'],
+                ['Phase offset', formatPhase(p.phaseOffset), 'warn'],
+                ['Rating', p.modulationQuality, quality],
+              ]},
+            ]}
+          />
         </div>
-        <StatusBadge status="completed" label="EXTRACTED" />
+
+        <InstrumentPanel
+          title="Power"
+          description="Measured across the analysis segment."
+          groups={[
+            { title: 'Levels', rows: [
+              ['Channel power', formatPower(p.channelPower)],
+              ['Signal power', formatPower(p.signalPower)],
+              ['Noise power', formatPower(p.noisePower)],
+            ]},
+            { title: 'Extremes', rows: [
+              ['Peak power', formatPower(p.peakPower)],
+              ['Average power', formatPower(p.averagePower)],
+            ]},
+            { title: 'Format', rows: [
+              ['I/Q format', state.fileMetadata?.format ?? 'Unknown'],
+              ['Sample type', state.fileMetadata?.dataType ?? '—'],
+            ]},
+          ]}
+        />
       </div>
 
-      {/* Primary parameters */}
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: 8 }}>
-          Primary Measurements
-        </div>
-        <div className="grid-auto">
-          <ParameterCard label="Center Frequency" value={`${p.centerFrequency.toFixed(3)}`} unit="MHz" accent="cyan" highlight />
-          <ParameterCard label="Sample Rate" value={formatSampleRate(p.sampleRate)} />
-          <ParameterCard label="Bandwidth" value={`${p.bandwidth.toFixed(1)}`} unit="kHz" />
-          <ParameterCard label="Occupied BW" value={`${p.occupiedBandwidth.toFixed(1)}`} unit="kHz" />
-          <ParameterCard label="SNR" value={formatSNR(p.snr)} accent="success" />
-          <ParameterCard label="Symbol Rate" value={`${p.symbolRate}`} unit="kSym/s" accent="cyan" />
-          <ParameterCard label="Signal Duration" value={`${p.duration.toFixed(2)}`} unit="s" />
-          <ParameterCard label="I/Q Format" value={state.fileMetadata?.format ?? 'Unknown'} />
-        </div>
-      </div>
+      <section className="mt-10">
+        <SectionHeading title="Where these come from" description="The spectrum and waveform the measurements were taken from." />
+        <AnalysisGrid charts={['spectrum', 'iq', 'amplitude']} cellHeight={200} />
+      </section>
 
-      {/* Carrier offsets */}
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: 8 }}>
-          Carrier Offset & Phase
-        </div>
-        <div className="grid-auto">
-          <ParameterCard label="Freq Offset (CFO)" value={formatCFO(p.cfo)} accent="warning" sub="Carrier frequency offset" />
-          <ParameterCard label="Phase Offset" value={formatPhase(p.phaseOffset)} accent="warning" sub="Estimated carrier phase" />
-          <ParameterCard label="EVM" value={formatEVM(p.evm)} sub="Error Vector Magnitude" />
-          <ParameterCard label="Modulation Quality" value={p.modulationQuality} accent={p.modulationQuality === 'Good' || p.modulationQuality === 'Excellent' ? 'success' : p.modulationQuality === 'Moderate' ? 'warning' : 'error'} />
-        </div>
-      </div>
-
-      {/* Power measurements */}
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: 8 }}>
-          Power Measurements
-        </div>
-        <div className="grid-auto">
-          <ParameterCard label="Channel Power" value={formatPower(p.channelPower)} sub="Total in-band power" />
-          <ParameterCard label="Signal Power" value={formatPower(p.signalPower)} accent="info" />
-          <ParameterCard label="Noise Power" value={formatPower(p.noisePower)} sub="Noise floor" />
-          <ParameterCard label="Peak Power" value={formatPower(p.peakPower)} />
-          <ParameterCard label="Average Power" value={formatPower(p.averagePower)} />
-        </div>
-      </div>
-
-      {/* Channel condition */}
-      <div className="card card-sm">
-        <div className="card-header">
-          <span className="card-title">Channel Condition</span>
-        </div>
-        <div style={{ display: 'flex', gap: 16 }}>
-          <div>
-            <div className="param-label">Condition</div>
-            <div className="param-value" style={{ color: 'var(--accent-cyan)' }}>{p.channelCondition}</div>
-          </div>
-          <div>
-            <div className="param-label">Modulation Quality</div>
-            <div className="param-value" style={{ color: p.modulationQuality === 'Good' ? 'var(--color-success)' : 'var(--color-warning)' }}>
-              {p.modulationQuality}
-            </div>
-          </div>
-          <div>
-            <div className="param-label">SNR</div>
-            <div className="param-value" style={{ color: 'var(--color-success)' }}>{formatSNR(p.snr)}</div>
-          </div>
-        </div>
-        <div style={{ marginTop: 12, padding: '8px 10px', background: 'var(--color-success-bg)', border: '1px solid rgba(76,175,80,0.2)', borderRadius: 'var(--radius-sm)', fontSize: '0.78rem', color: 'var(--color-success)' }}>
-          ✓ Signal quality sufficient for reliable classification and demodulation.
-        </div>
-      </div>
+      <NextStep to="/modulation" label="Modulation" description="Classify the scheme the transmitter used." />
     </div>
   );
 }
