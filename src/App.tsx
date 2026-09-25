@@ -19,6 +19,7 @@ const pages = {
   report: () => import('./pages/ReportPage'),
 };
 
+const Landing = lazy(() => import('./pages/landing/LandingPage'));
 const Login = lazy(() => import('./pages/auth/LoginPage'));
 const Signup = lazy(() => import('./pages/auth/SignupPage'));
 const Dashboard = lazy(pages.dashboard);
@@ -72,10 +73,10 @@ export default function App() {
       <AnalysisProvider>
         <BrowserRouter>
           <Routes>
+            <Route path="/" element={<Suspense fallback={null}><Landing /></Suspense>} />
             <Route path="/login" element={<Suspense fallback={null}><Login /></Suspense>} />
             <Route path="/signup" element={<Suspense fallback={null}><Signup /></Suspense>} />
             <Route element={<ProtectedLayout />}>
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/visualizations" element={<Visualizations />} />
               <Route path="/parameters" element={<Parameters />} />
@@ -86,7 +87,7 @@ export default function App() {
               <Route path="/bitstream" element={<BitStream />} />
               <Route path="/report" element={<Report />} />
             </Route>
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>
       </AnalysisProvider>
