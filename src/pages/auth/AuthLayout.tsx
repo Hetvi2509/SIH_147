@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { Binary, Cpu, ShieldCheck } from '@phosphor-icons/react';
 import Wordmark from '@/components/common/Wordmark';
 
@@ -13,10 +14,10 @@ export default function AuthLayout({ title, subtitle, children, footer }: { titl
   return (
     <div className="grid min-h-svh bg-background lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
       <main className="flex flex-col px-6 py-8 sm:px-12">
-        <div className="flex items-center gap-2.5">
+        <Link to="/" className="flex w-fit items-center gap-2.5 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label="TarangChakra home">
           <img src="/logo.png" alt="" width={44} height={44} className="size-11 object-contain" />
           <Wordmark className="font-display text-[20px] tracking-[-0.01em]" />
-        </div>
+        </Link>
 
         <div className="mx-auto flex w-full max-w-[400px] flex-1 flex-col justify-center py-10">
           <h1 className="text-[36px] leading-[1.08] tracking-[-0.02em]">{title}</h1>
