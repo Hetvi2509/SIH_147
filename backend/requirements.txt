@@ -2,9 +2,13 @@ torch
 torchvision
 numpy
 scipy
+PyWavelets
 fastapi
 uvicorn[standard]
 python-multipart
 
 psycopg[binary,pool]
 python-dotenv
+langgraph
+langchain-core
+langchain-openai

@@ -14,6 +14,7 @@ const pages = {
   modulation: () => import('./pages/ModulationPage'),
   synchronization: () => import('./pages/SynchronizationPage'),
   demodulation: () => import('./pages/DemodulationPage'),
+  history: () => import('./pages/HistoryPage'),
   fec: () => import('./pages/FECPage'),
   bitstream: () => import('./pages/BitStreamPage'),
   report: () => import('./pages/ReportPage'),
@@ -28,6 +29,7 @@ const Parameters = lazy(pages.parameters);
 const Modulation = lazy(pages.modulation);
 const Synchronization = lazy(pages.synchronization);
 const Demodulation = lazy(pages.demodulation);
+const History = lazy(pages.history);
 const FEC = lazy(pages.fec);
 const BitStream = lazy(pages.bitstream);
 const Report = lazy(pages.report);
@@ -78,6 +80,7 @@ export default function App() {
             <Route path="/signup" element={<Suspense fallback={null}><Signup /></Suspense>} />
             <Route element={<ProtectedLayout />}>
               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/history" element={<History />} />
               <Route path="/visualizations" element={<Visualizations />} />
               <Route path="/parameters" element={<Parameters />} />
               <Route path="/modulation" element={<Modulation />} />

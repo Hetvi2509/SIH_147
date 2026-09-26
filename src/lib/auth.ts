@@ -22,6 +22,9 @@ export const validateEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.
 
 const getToken = () => { try { return localStorage.getItem(TOKEN_KEY); } catch { return null; } };
 
+/** For other modules (e.g. analysisService's history calls) that need the bearer token directly. */
+export const getAuthToken = getToken;
+
 function saveSession(token: string, user: User) {
   try { localStorage.setItem(TOKEN_KEY, token); localStorage.setItem(USER_KEY, JSON.stringify(user)); } catch { /* storage blocked */ }
 }

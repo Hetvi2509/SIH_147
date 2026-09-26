@@ -71,6 +71,17 @@ def current_user(authorization: str | None = Header(default=None)) -> dict:
     return row
 
 
+def current_user_optional(authorization: str | None = Header(default=None)) -> dict | None:
+    """Like `current_user`, but returns None instead of raising when signed out —
+    for endpoints (e.g. chat) that work for guests but personalize when logged in."""
+    if not authorization:
+        return None
+    try:
+        return current_user(authorization)
+    except HTTPException:
+        return None
+
+
 @router.post("/signup")
 def signup(body: SignUpIn):
     name = re.sub(r"\s+", " ", body.name.strip())

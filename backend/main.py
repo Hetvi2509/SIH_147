@@ -11,7 +11,7 @@ import os
 import time
 import logging
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 # Ensure the backend/ directory is on sys.path so `model` and `preprocess`
 # are importable whether uvicorn is launched from the project root or backend/.
@@ -20,14 +20,19 @@ sys.path.insert(0, str(Path(__file__).parent))
 import numpy as np
 import torch
 import torch.nn.functional as F
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, Form, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from model import SRMambaAMC
-from preprocess import preprocess
+from preprocess import load_iq_bytes
 from db import init_pool, close_pool
 from auth import router as auth_router
+from history import router as history_router
+from bitstream_fec import run_bitstream_fec_analysis
+from chat import router as chat_router
+import codem_demod
+from model_v2 import load_amc_v2
+from preprocess_v2 import preprocess_v2
 
 # -------------------------------------------------------------------
 # Logging
@@ -40,7 +45,11 @@ logger = logging.getLogger("amc-backend")
 # Paths
 # -------------------------------------------------------------------
 
-MODEL_PATH = Path(__file__).parent.parent / "sr_mamba_official_best.pt"
+MODEL_V2_PATH = Path(__file__).parent.parent / "srmamba_amc_v2_post_training.pt"
+if not MODEL_V2_PATH.exists():
+    MODEL_V2_PATH = Path(__file__).parent.parent / "srmamba_amc_v2_post_training"
+
+CODEM_PATH = Path(__file__).parent.parent / "codem_demodulation.pt"
 
 # -------------------------------------------------------------------
 # App
@@ -61,79 +70,48 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(history_router)
+app.include_router(chat_router)
 
 # -------------------------------------------------------------------
-# Model singleton â€” loaded once at startup
+# Model singleton â€” loaded once at startup. v1 (sr_mamba_official_best) is intentionally not
+# loaded: srmamba_amc_v2_post_training is the only model used for modulation classification.
 # -------------------------------------------------------------------
 
-_model: Optional[SRMambaAMC] = None
-_classes: List[str] = []
-_config: dict = {}
 _device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-_feat_mean: Optional[torch.Tensor] = None
-_feat_std:  Optional[torch.Tensor] = None
+
+_model_v2 = None
+_classes_v2: List[str] = []
+_ckpt_v2: dict = {}
 
 
-def _load_model():
-    global _model, _classes, _config, _feat_mean, _feat_std
+def _load_model_v2():
+    global _model_v2, _classes_v2, _ckpt_v2
+    if not MODEL_V2_PATH.exists():
+        raise FileNotFoundError(f"v2 checkpoint not found at {MODEL_V2_PATH}")
+    logger.info(f"Loading SR-Mamba AMC v2 checkpoint from {MODEL_V2_PATH} …")
+    _model_v2, _ckpt_v2, _classes_v2 = load_amc_v2(str(MODEL_V2_PATH), device=str(_device))
+    logger.info(
+        f"v2 model loaded (best_epoch={_ckpt_v2.get('best_epoch')}, "
+        f"best_val_loss={_ckpt_v2.get('best_val_loss'):.4f}). Classes ({len(_classes_v2)}): {_classes_v2}"
+    )
 
-    if not MODEL_PATH.exists():
-        raise FileNotFoundError(f"Model file not found: {MODEL_PATH}")
 
-    logger.info(f"Loading checkpoint from {MODEL_PATH} on {_device} â€¦")
-    ckpt = torch.load(MODEL_PATH, map_location=_device, weights_only=False)
-
-    # Pull metadata stored in the checkpoint
-    _classes = ckpt.get("class_names", [
-        "OOK", "PAM", "2FSK", "4FSK", "CPFSK", "GMSK",
-        "BPSK", "QPSK", "8PSK", "16QAM", "64QAM",
-        "AM", "FM", "NOISE",
-    ])
-    _config  = ckpt.get("configuration", {})
-
-    ws  = int(_config.get("window_size",      1024))
-    ps  = int(_config.get("patch_size",          8))
-    ed  = int(_config.get("embedding_dim",      256))
-    mb  = int(_config.get("mamba_blocks",         8))
-    ds  = int(_config.get("d_state",             16))
-    me  = int(_config.get("mamba_expand",          2))
-    tb  = int(_config.get("transformer_blocks",    2))
-    ah  = int(_config.get("attention_heads",       4))
-    do  = float(_config.get("dropout",           0.2))
-    nc  = len(_classes)
-
-    # Auto-detect conv_kernel from the saved weight shape so the architecture
-    # always matches the checkpoint even when no config dict is stored.
-    state = ckpt["model_state_dict"]
-    _ck_default = int(_config.get("conv_kernel", 4))
-    _ck_key = next((k for k in state if "blocks." in k and k.endswith(".conv.weight")), None)
-    ck = int(state[_ck_key].shape[-1]) if _ck_key else _ck_default
-    logger.info(f"conv_kernel={ck}, mamba_expand={me} (from checkpoint)")
-
-    _model = SRMambaAMC(
-        num_classes=nc, window_size=ws, patch_size=ps,
-        embedding_dim=ed, mamba_blocks=mb, d_state=ds,
-        conv_kernel=ck, mamba_expand=me, transformer_blocks=tb,
-        attention_heads=ah, dropout=do,
-    ).to(_device)
-
-    _model.load_state_dict(ckpt["model_state_dict"])
-    _model.eval()
-
-    # Load feature normalization statistics stored in the checkpoint
-    if "feature_mean" in ckpt and "feature_std" in ckpt:
-        _feat_mean = torch.tensor(ckpt["feature_mean"], dtype=torch.float32).to(_device)
-        _feat_std  = torch.tensor(ckpt["feature_std"],  dtype=torch.float32).to(_device)
-        logger.info(f"Feature normalisation stats loaded (dim={_feat_mean.shape})")
-    else:
-        logger.warning("No feature_mean/feature_std in checkpoint â€” features will not be normalised.")
-
-    logger.info(f"Model loaded. Classes ({nc}): {_classes}")
+def _load_codem():
+    if not CODEM_PATH.exists():
+        raise FileNotFoundError(f"CoDeM checkpoint not found at {CODEM_PATH}")
+    logger.info(f"Loading CoDeM demodulation checkpoint from {CODEM_PATH} …")
+    codem_demod.load_codem_singleton(CODEM_PATH, device=str(_device))
+    logger.info(
+        f"CoDeM model loaded. Classes ({len(codem_demod._classes)}): {codem_demod._classes}, "
+        f"bitstream-capable: {sorted(set(codem_demod._classes) - codem_demod.NO_BITSTREAM_MODULATIONS)}"
+    )
 
 
 @app.on_event("startup")
 async def startup_event():
-    _load_model()
+    _load_model_v2()
+    _load_codem()
     init_pool()
 
 
@@ -239,76 +217,71 @@ ALLOWED_EXTENSIONS = {".iq", ".wav", ".bin"}
 async def health():
     return {
         "status": "ok",
-        "model_loaded": _model is not None,
+        "model_loaded": _model_v2 is not None,
+        "model_version": "srmamba_amc_v2_post_training",
         "device": str(_device),
-        "classes": _classes,
-        "num_classes": len(_classes),
-        "feature_normalisation": _feat_mean is not None,
+        "classes": _classes_v2,
+        "num_classes": len(_classes_v2),
+        "codem_loaded": codem_demod._model is not None,
+        "codem_bitstream_classes": sorted(set(codem_demod._classes) - codem_demod.NO_BITSTREAM_MODULATIONS),
     }
 
 
 @app.post("/api/v1/classify", response_model=ClassifyResponse)
 async def classify(file: UploadFile = File(...)):
     """
-    Accept a .iq / .wav / .bin file and return the AMC result.
+    Accept a .iq / .wav / .bin file and return the AMC result, backed by the
+    srmamba_amc_v2_post_training checkpoint (FiLM-conditioned dual-view encoder + cross-attention
+    analytic fusion; see backend/model_v2.py and backend/preprocess_v2.py).
     """
-    if _model is None:
-        raise HTTPException(503, "Model not loaded yet. Try again in a moment.")
+    if _model_v2 is None:
+        raise HTTPException(503, "v2 model not loaded (checkpoint missing).")
 
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             400,
-            f"Unsupported file type '{suffix}'. "
-            f"Accepted: {', '.join(ALLOWED_EXTENSIONS)}",
+            f"Unsupported file type '{suffix}'. Accepted: {', '.join(ALLOWED_EXTENSIONS)}",
         )
 
     data = await file.read()
     if len(data) == 0:
         raise HTTPException(400, "Uploaded file is empty.")
 
-    # Minimum size check: need at least 1024 * 2 * 4 = 8 192 bytes for float32 IQ
-    ws = int(_config.get("window_size", 1024))
-
     try:
-        batch = preprocess(data, file.filename or "signal.iq", window_size=ws)
+        z = load_iq_bytes(data, file.filename or "signal.iq")
+        cfg = _model_v2.cfg
+        batch = preprocess_v2(z, window_len=cfg.window_len, canonical_sps=cfg.canonical_sps)
     except Exception as exc:
-        logger.error(f"Preprocessing failed: {exc}")
+        logger.error(f"v2 preprocessing failed: {exc}")
         raise HTTPException(422, f"Failed to parse signal file: {exc}")
 
     preview = _make_preview(batch["raw"])
 
-    # Run inference
     t0 = time.perf_counter()
     with torch.no_grad():
         batch = {k: v.to(_device) for k, v in batch.items()}
-        # Apply feature normalisation if stats were saved in the checkpoint
-        if _feat_mean is not None and _feat_std is not None:
-            batch["features"] = (batch["features"] - _feat_mean) / (_feat_std + 1e-8)
-        out    = _model(batch["raw"], batch["canonical"], batch["features"])
-        logits = out["logits"]                       # [1, num_classes]
-
+        out = _model_v2(batch["raw"], batch["canonical"], batch["features"],
+                         batch["sps_hat"], batch["conf_hat"])
+        logits = out["logits"]
     elapsed_ms = (time.perf_counter() - t0) * 1000
 
-    probs = F.softmax(logits, dim=1).squeeze(0).cpu().numpy()   # [num_classes]
-    top_k = int(min(5, len(_classes)))
+    probs = F.softmax(logits, dim=1).squeeze(0).cpu().numpy()
+    top_k = int(min(5, len(_classes_v2)))
     top_indices = np.argsort(probs)[::-1][:top_k]
 
-    predicted_idx  = int(top_indices[0])
-    predicted_class = _classes[predicted_idx]
-    confidence      = float(probs[predicted_idx]) * 100.0
-    family          = _FAMILY_MAP.get(predicted_class, "Unknown")
+    predicted_idx = int(top_indices[0])
+    predicted_class = _classes_v2[predicted_idx]
+    confidence = float(probs[predicted_idx]) * 100.0
+    family = _FAMILY_MAP.get(predicted_class, "Unknown")
 
     top_k_items = [
-        TopKItem(
-            modulation=_classes[i],
-            confidence=round(float(probs[i]) * 100.0, 2),
-        )
+        TopKItem(modulation=_classes_v2[i], confidence=round(float(probs[i]) * 100.0, 2))
         for i in top_indices
     ]
 
     logger.info(
-        f"Classified '{file.filename}' â†’ {predicted_class} "
+        f"[v2] Classified '{file.filename}' -> {predicted_class} "
         f"({confidence:.1f}%) in {elapsed_ms:.1f} ms"
     )
 
@@ -318,7 +291,40 @@ async def classify(file: UploadFile = File(...)):
         confidence=round(confidence, 2),
         topK=top_k_items,
         inferenceTimeMs=round(elapsed_ms, 2),
-        modelVersion="sr_mamba_official_best",
+        modelVersion="srmamba_amc_v2_post_training",
         status="completed",
         preview=preview,
     )
+
+
+@app.post("/api/v1/bitstream-fec")
+async def bitstream_fec(
+    file: UploadFile = File(...),
+    modulation: str = Form(...),
+    family: str = Form(""),
+):
+    """
+    Real FEC decode + interleaver de-interleaving (fec_interlevaer/fec/slate_api.py) and
+    Tier 1 bit-stream frame/CRC recovery (bit_stream_anaylsis/bit_stream) run on bits blindly
+    demodulated from the uploaded signal (backend/demod.py) -- not derived from classification
+    confidence.
+    """
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            400,
+            f"Unsupported file type '{suffix}'. Accepted: {', '.join(ALLOWED_EXTENSIONS)}",
+        )
+
+    data = await file.read()
+    if len(data) == 0:
+        raise HTTPException(400, "Uploaded file is empty.")
+
+    try:
+        z = load_iq_bytes(data, file.filename or "signal.iq")
+    except Exception as exc:
+        logger.error(f"IQ load failed: {exc}")
+        raise HTTPException(422, f"Failed to parse signal file: {exc}")
+
+    result = run_bitstream_fec_analysis(z, modulation, family)
+    return result

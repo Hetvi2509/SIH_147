@@ -15,8 +15,8 @@ import {
   MOCK_SYNC, MOCK_DEMODULATION, MOCK_FEC, MOCK_INTERLEAVER,
   MOCK_BER, MOCK_BITSTREAM, MOCK_PIPELINE, USE_STATIC_DATA
 } from '../data/mockAnalysis';
-import { buildBitStream } from '../data/bitStream';
 import { setLiveSignalPreview } from '../data/mockSignal';
+import { getAuthToken } from '../lib/auth';
 
 // Base URL for the real backend API (set via env variable)
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
@@ -28,6 +28,18 @@ const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
 let _uploadedFile: File | null = null;
 let _lastClassification: ClassificationResult | null = null;
 let _lastFileMetadata: FileMetadata | null = null;
+interface RawDemod {
+  ok: boolean;
+  reason?: string;
+  sps?: number;
+  bitsPerSymbol?: number;
+  nBits?: number;
+  nSymbols?: number;
+  berEstimate?: number;
+}
+type BitstreamFecResult = { demod: RawDemod; fec: FECResult; interleaver: InterleaverResult; bitStream: BitStreamResult };
+let _bitstreamFecCache: BitstreamFecResult | null = null;
+let _bitstreamFecPromise: Promise<BitstreamFecResult> | null = null;
 
 // ---------------------------------------------------------------
 // Modulation helpers
@@ -73,6 +85,8 @@ function berFromSNR(snrDb: number, bitsPerSym: number): number {
 // ---------------------------------------------------------------
 export async function uploadSignal(file: File): Promise<{ analysisId: string; metadata: FileMetadata }> {
   _uploadedFile = file;
+  _bitstreamFecCache = null;
+  _bitstreamFecPromise = null;
   await delay(400);
 
   const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
@@ -275,65 +289,99 @@ export async function getSynchronization(_analysisId: string): Promise<SyncParam
 }
 
 // ---------------------------------------------------------------
-// Demodulation — derived from classification
+// Demodulation — REAL API CALL (via getBitstreamFecAnalysis, cached alongside
+// FEC/interleaver/bit-stream). Bits + LLRs come from codem_demodulation.pt
+// (backend/codem_demod.py), not a confidence-derived formula.
 // ---------------------------------------------------------------
 export async function getDemodulation(_analysisId: string): Promise<DemodulationResult> {
-  await delay(200);
   if (!_lastClassification || !_lastFileMetadata) return MOCK_DEMODULATION;
   const cls = _lastClassification;
-  const meta = _lastFileMetadata;
   const isNoise = cls.modulation === 'NOISE' || cls.modulation === 'Noise';
-  const success = !isNoise && cls.confidence >= 60;
-  const symbolRate = FAMILY_SYMBOL_RATE[cls.family] ?? 250;
-  const bps = BITS_PER_SYMBOL[cls.modulation] ?? 1;
-  const recoveredSymbols = Math.floor(symbolRate * 1000 * meta.duration);
-  const recoveredBits = recoveredSymbols * bps;
-  const snr = snrFromConfidence(cls.confidence);
-  const ber = berFromSNR(snr, bps);
+
+  const { demod, fec, bitStream } = await getBitstreamFecAnalysis();
+
+  if (isNoise || !demod.ok) {
+    return {
+      detectedModulation: cls.modulation,
+      demodulatorFamily: DEMOD_NAMES[cls.modulation] ?? `${cls.modulation} Demodulator`,
+      status: 'unsupported',
+      recoveredSymbols: 0,
+      recoveredBits: 0,
+      berBeforeDecoding: 0,
+      berAfterDecoding: null,
+    };
+  }
+
+  const berBeforeDecoding = demod.berEstimate ?? 0;
+  const fecSuccessful = fec.decodingStatus === 'successful' && fec.decodedBits;
+  const berAfterDecoding = fecSuccessful
+    ? (fec.errorBits ?? 0) / (fec.decodedBits as number)
+    : null;
+
   return {
     detectedModulation: cls.modulation,
     demodulatorFamily: DEMOD_NAMES[cls.modulation] ?? `${cls.modulation} Demodulator`,
-    status: isNoise ? 'unsupported' : success ? 'successful' : 'uncertain',
-    recoveredSymbols,
-    recoveredBits,
-    berBeforeDecoding: parseFloat(ber.toExponential(2)),
-    berAfterDecoding: success ? parseFloat((ber / 100).toExponential(2)) : null,
+    status: fecSuccessful ? 'successful' : berBeforeDecoding <= 0.4 ? 'uncertain' : 'failed',
+    recoveredSymbols: demod.nSymbols ?? 0,
+    recoveredBits: demod.nBits ?? bitStream.recovered.totalBits,
+    berBeforeDecoding: parseFloat(berBeforeDecoding.toExponential(2)),
+    berAfterDecoding: berAfterDecoding !== null ? parseFloat(berAfterDecoding.toExponential(2)) : null,
   };
 }
 
 // ---------------------------------------------------------------
-// FEC — derived from classification
+// FEC + interleaver + bit-stream — REAL API CALL
+// POST /api/v1/bitstream-fec (multipart/form-data with the signal file +
+// the classified modulation). Runs the actual fec_interlevaer/fec/slate_api.py
+// Viterbi decode + de-interleaving and bit_stream_anaylsis Tier 1 frame/CRC
+// recovery on bits blindly demodulated from the uploaded signal.
 // ---------------------------------------------------------------
-export async function getFEC(_analysisId: string): Promise<FECResult> {
-  await delay(200);
-  if (!_lastClassification) return MOCK_FEC;
-  const cls = _lastClassification;
-  const isNoise = cls.modulation === 'NOISE' || cls.modulation === 'Noise';
-  const fecPresent = !isNoise && cls.confidence >= 80 && ['PSK','QAM','FSK'].includes(cls.family);
-  if (!fecPresent) {
-    return { detected: isNoise ? null : false, family: 'None', codeRate: 'N/A',
-      decodingStatus: isNoise ? 'unknown' : 'not-detected' };
+function getBitstreamFecAnalysis(): Promise<BitstreamFecResult> {
+  if (_bitstreamFecCache) return Promise.resolve(_bitstreamFecCache);
+  if (_bitstreamFecPromise) return _bitstreamFecPromise;
+
+  const mockResult: BitstreamFecResult = {
+    demod: { ok: false, reason: 'mock data' },
+    fec: MOCK_FEC, interleaver: MOCK_INTERLEAVER, bitStream: MOCK_BITSTREAM,
+  };
+  if (USE_STATIC_DATA || !_uploadedFile || !_lastClassification) {
+    return Promise.resolve(mockResult);
   }
-  const families = ['LDPC', 'Turbo', 'Convolutional'] as const;
-  const rates = ['1/2', '2/3', '3/4'] as const;
-  const idx = Math.floor(cls.confidence / 34) % 3;
-  return { detected: true, family: families[idx], codeRate: rates[idx], decodingStatus: 'successful' };
+
+  const formData = new FormData();
+  formData.append('file', _uploadedFile, _uploadedFile.name);
+  formData.append('modulation', _lastClassification.modulation);
+  formData.append('family', _lastClassification.family);
+
+  _bitstreamFecPromise = fetch(`${API_BASE}/bitstream-fec`, { method: 'POST', body: formData })
+    .then(async (response) => {
+      if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        throw new Error(`Backend error ${response.status}: ${text}`);
+      }
+      const data = await response.json();
+      const result: BitstreamFecResult = {
+        demod: data.demod as RawDemod,
+        fec: data.fec as FECResult, interleaver: data.interleaver as InterleaverResult, bitStream: data.bitstream as BitStreamResult,
+      };
+      _bitstreamFecCache = result;
+      return result;
+    })
+    .catch((err) => {
+      console.error('[AnalysisService] bitstream-fec request failed:', err);
+      _bitstreamFecPromise = null;
+      return mockResult;
+    });
+
+  return _bitstreamFecPromise;
 }
 
-// ---------------------------------------------------------------
-// Interleaver
-// ---------------------------------------------------------------
+export async function getFEC(_analysisId: string): Promise<FECResult> {
+  return (await getBitstreamFecAnalysis()).fec;
+}
+
 export async function getInterleaver(_analysisId: string): Promise<InterleaverResult> {
-  await delay(150);
-  if (!_lastClassification) return MOCK_INTERLEAVER;
-  const cls = _lastClassification;
-  const detected = cls.confidence >= 85 && ['PSK','QAM'].includes(cls.family);
-  return {
-    detected,
-    type: detected ? 'Block' : 'None',
-    depth: detected ? 1024 : undefined,
-    deinterleavingStatus: detected ? 'completed' : 'not-detected',
-  };
+  return (await getBitstreamFecAnalysis()).interleaver;
 }
 
 // ---------------------------------------------------------------
@@ -360,23 +408,12 @@ export async function getBER(_analysisId: string): Promise<BERResult> {
 }
 
 // ---------------------------------------------------------------
-// Bit stream analysis — recovered data + correlation.
-// Derived from the demodulation / BER results of this run.
+// Bit stream analysis — real recovered data + correlation, from Tier 1 of
+// bit_stream_anaylsis run on blindly-demodulated bits (see getBitstreamFecAnalysis).
 // ---------------------------------------------------------------
-export async function getBitStream(analysisId: string): Promise<BitStreamResult> {
-  await delay(150);
+export async function getBitStream(_analysisId: string): Promise<BitStreamResult> {
   if (!_lastClassification || !_lastFileMetadata) return MOCK_BITSTREAM;
-  const cls = _lastClassification;
-  const demod = await getDemodulation(analysisId);
-  const ber = await getBER(analysisId);
-  const encoding = `${cls.modulation}, Gray-mapped`;
-  if (demod.status !== 'successful') {
-    return buildBitStream({ totalBits: 0, invalidBits: 0, score: 0.1, encoding, seed: 7 });
-  }
-  const berAfter = ber.berAfterFEC ?? ber.berBeforeFEC;
-  const invalidBits = Math.min(ber.totalBits, Math.round(ber.totalBits * berAfter));
-  const score = Math.min(0.99, 0.5 + 0.49 * (cls.confidence / 100));
-  return buildBitStream({ totalBits: ber.totalBits, invalidBits, score, encoding });
+  return (await getBitstreamFecAnalysis()).bitStream;
 }
 
 // ---------------------------------------------------------------
@@ -458,3 +495,99 @@ export async function exportJSON(analysisId: string, s: AnalysisState): Promise<
 }
 
 export { API_BASE };
+
+// ---------------------------------------------------------------
+// History — full run snapshots stored in Postgres (backend/history.py),
+// so past analyses (data + graphs) can be revisited later.
+// ---------------------------------------------------------------
+export interface HistorySnapshot {
+  fileMetadata: FileMetadata | null;
+  parameters: SignalParameters | null;
+  classification: ClassificationResult | null;
+  sync: SyncParameters | null;
+  demodulation: DemodulationResult | null;
+  fec: FECResult | null;
+  interleaver: InterleaverResult | null;
+  ber: BERResult | null;
+  bitStream: BitStreamResult | null;
+}
+
+/** Cheap, table-ready fields, stored alongside the full snapshot so the history list never has
+ *  to fetch the (much larger) preview/graph payload just to render a row. */
+export interface HistorySummary {
+  id: number;
+  fileName: string;
+  modulation: string;
+  confidence: number;
+  createdAt: number;
+  family: string | null;
+  snr: number | null;
+  symbolRate: number | null;
+  duration: number | null;
+  sampleRate: number | null;
+  recoveredBits: number | null;
+  berAfter: number | null;
+  demodStatus: string | null;
+  fecDetected: boolean | null;
+  fecFamily: string | null;
+}
+
+function authHeaders(): Record<string, string> {
+  const token = getAuthToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+function buildSummary(s: AnalysisState): Omit<HistorySummary, 'id' | 'fileName' | 'modulation' | 'confidence' | 'createdAt'> {
+  return {
+    family: s.classification?.family ?? null,
+    snr: s.parameters?.snr ?? null,
+    symbolRate: s.parameters?.symbolRate ?? null,
+    duration: s.fileMetadata?.duration ?? null,
+    sampleRate: s.fileMetadata?.sampleRate ?? null,
+    recoveredBits: s.demodulation?.recoveredBits ?? null,
+    berAfter: s.demodulation?.berAfterDecoding ?? null,
+    demodStatus: s.demodulation?.status ?? null,
+    fecDetected: s.fec?.detected ?? null,
+    fecFamily: s.fec?.family ?? null,
+  };
+}
+
+/** Fire-and-forget: persists a completed run so it shows up in /history. Never throws. */
+export async function saveAnalysisToHistory(s: AnalysisState): Promise<void> {
+  const cls = s.classification;
+  const meta = s.fileMetadata;
+  if (!cls || !meta || !getAuthToken()) return;
+  const snapshot: HistorySnapshot = {
+    fileMetadata: meta, parameters: s.parameters, classification: cls, sync: s.sync,
+    demodulation: s.demodulation, fec: s.fec, interleaver: s.interleaver, ber: s.ber, bitStream: s.bitStream,
+  };
+  try {
+    await fetch(`${API_BASE}/history`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({
+        fileName: meta.fileName, modulation: cls.modulation, confidence: cls.confidence,
+        summary: buildSummary(s), data: snapshot,
+      }),
+    });
+  } catch (err) {
+    console.error('[AnalysisService] Failed to save analysis to history:', err);
+  }
+}
+
+export async function listAnalysisHistory(): Promise<HistorySummary[]> {
+  const res = await fetch(`${API_BASE}/history`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`Failed to load history (${res.status}).`);
+  return res.json();
+}
+
+export async function getAnalysisHistoryEntry(id: number): Promise<HistorySummary & { data: HistorySnapshot }> {
+  const res = await fetch(`${API_BASE}/history/${id}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`Failed to load analysis (${res.status}).`);
+  return res.json();
+}
+
+export async function deleteAnalysisHistoryEntry(id: number): Promise<void> {
+  const res = await fetch(`${API_BASE}/history/${id}`, { method: 'DELETE', headers: authHeaders() });
+  if (!res.ok) throw new Error(`Failed to delete analysis (${res.status}).`);
+}

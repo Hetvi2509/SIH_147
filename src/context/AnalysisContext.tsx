@@ -68,6 +68,7 @@ interface AnalysisContextValue {
   state: AnalysisState;
   uploadFile: (file: File) => Promise<void>;
   runAnalysis: () => Promise<void>;
+  loadHistoryEntry: (id: number) => Promise<void>;
   setSegment: (start: number, end: number) => void;
   reset: () => void;
   exportJSON: () => Promise<void>;
@@ -157,6 +158,9 @@ export function AnalysisProvider({ children }: { children: ReactNode }) {
         type: 'ANALYSIS_COMPLETED',
         payload: { parameters: params, classification, sync, demodulation: demod, fec, interleaver, ber, bitStream },
       });
+      void analysisService.saveAnalysisToHistory({
+        ...state, parameters: params, classification, sync, demodulation: demod, fec, interleaver, ber, bitStream,
+      });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Analysis failed. Please try again.';
       dispatch({ type: 'SET_ERROR', payload: message });
@@ -171,6 +175,24 @@ export function AnalysisProvider({ children }: { children: ReactNode }) {
       });
     }
   }, [state.analysisId, state.pipeline]);
+
+  const loadHistoryEntry = useCallback(async (id: number) => {
+    dispatch({ type: 'SET_LOADING', payload: true });
+    try {
+      const entry = await analysisService.getAnalysisHistoryEntry(id);
+      const { data } = entry;
+      dispatch({
+        type: 'ANALYSIS_COMPLETED',
+        payload: {
+          ...data,
+          analysisId: `history-${entry.id}`,
+          pipeline: MOCK_PIPELINE.map((s) => ({ ...s, status: 'completed' as StageStatus })),
+        },
+      });
+    } catch {
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to load this analysis from history.' });
+    }
+  }, []);
 
   const setSegment = useCallback((start: number, end: number) => {
     dispatch({ type: 'SET_SEGMENT', payload: { start, end } });
@@ -191,8 +213,8 @@ export function AnalysisProvider({ children }: { children: ReactNode }) {
   }, [state.analysisId]);
 
   const value = useMemo(
-    () => ({ state, uploadFile, runAnalysis, setSegment, reset, exportJSON, exportPDF, exportCSV }),
-    [state, uploadFile, runAnalysis, setSegment, reset, exportJSON, exportPDF, exportCSV],
+    () => ({ state, uploadFile, runAnalysis, loadHistoryEntry, setSegment, reset, exportJSON, exportPDF, exportCSV }),
+    [state, uploadFile, runAnalysis, loadHistoryEntry, setSegment, reset, exportJSON, exportPDF, exportCSV],
   );
 
   return (

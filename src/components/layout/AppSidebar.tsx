@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
-  ArrowsClockwise, Binary, CaretDown, CheckCircle, ChartLineUp, CircleNotch, Cpu,
+  ArrowsClockwise, Binary, CaretDown, CheckCircle, ChartLineUp, CircleNotch, ClockCounterClockwise, Cpu,
   FileText, ShieldCheck, SlidersHorizontal, SquaresFour, WaveSine,
 } from '@phosphor-icons/react';
 import type { Icon } from '@phosphor-icons/react';
@@ -22,6 +22,7 @@ interface Group { id: string; label: string; items: Item[] }
 const GROUPS: Group[] = [
   { id: 'workspace', label: 'Workspace', items: [
     { to: '/dashboard', label: 'Dashboard', icon: SquaresFour },
+    { to: '/history', label: 'History', icon: ClockCounterClockwise },
   ]},
   { id: 'signal', label: 'Signal', items: [
     { to: '/visualizations', label: 'Visualizations', icon: ChartLineUp },
