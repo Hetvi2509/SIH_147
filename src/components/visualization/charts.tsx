@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import {
   Area, CartesianGrid, ComposedChart, Line, LineChart, ReferenceLine, Scatter, ScatterChart, XAxis, YAxis,
 } from 'recharts';
@@ -20,7 +20,7 @@ const fill = (h: number) => ({ height: h, width: '100%', aspectRatio: 'auto' as 
 // ---------------------------------------------------------------- Recharts
 
 export function IQPlot({ height, zoom }: PlotProps) {
-  const data = useMemo(() => sliceWindow(MOCK_IQ(), zoom), [zoom]);
+  const data = sliceWindow(MOCK_IQ(), zoom);
   const config = {
     i: { label: 'I', color: C.orange },
     q: { label: 'Q', color: C.slate },
@@ -43,7 +43,7 @@ export function IQPlot({ height, zoom }: PlotProps) {
 }
 
 export function SpectrumPlot({ height, zoom, fc = 2.45 }: PlotProps) {
-  const data = useMemo(() => sliceWindow(MOCK_SPECTRUM(), zoom), [zoom]);
+  const data = sliceWindow(MOCK_SPECTRUM(), zoom);
   const config = { power: { label: 'Power (dBm)', color: C.orange }, noise: { label: 'Noise floor', color: C.axis } } satisfies ChartConfig;
   return (
     <ChartContainer config={config} className="aspect-auto" style={fill(height)}>
@@ -68,7 +68,7 @@ export function SpectrumPlot({ height, zoom, fc = 2.45 }: PlotProps) {
 }
 
 export function FreqPlot({ height, zoom, fc = 2.45 }: PlotProps) {
-  const data = useMemo(() => sliceWindow(MOCK_FREQ_VS_TIME(), zoom), [zoom]);
+  const data = sliceWindow(MOCK_FREQ_VS_TIME(), zoom);
   const config = { frequency: { label: 'Frequency (kHz)', color: C.orange } } satisfies ChartConfig;
   const fcKhz = fc * 1000;
   return (
@@ -86,7 +86,7 @@ export function FreqPlot({ height, zoom, fc = 2.45 }: PlotProps) {
 }
 
 export function AmplitudePlot({ height, zoom }: PlotProps) {
-  const data = useMemo(() => sliceWindow(MOCK_AMPLITUDE(), zoom), [zoom]);
+  const data = sliceWindow(MOCK_AMPLITUDE(), zoom);
   const config = { amplitude: { label: 'Amplitude', color: C.orange } } satisfies ChartConfig;
   return (
     <ChartContainer config={config} className="aspect-auto" style={fill(height)}>
@@ -103,7 +103,7 @@ export function AmplitudePlot({ height, zoom }: PlotProps) {
 }
 
 export function PhasePlot({ height, zoom }: PlotProps) {
-  const data = useMemo(() => sliceWindow(MOCK_PHASE_VS_TIME(), zoom), [zoom]);
+  const data = sliceWindow(MOCK_PHASE_VS_TIME(), zoom);
   const config = { phase: { label: 'Phase (°)', color: C.orange } } satisfies ChartConfig;
   return (
     <ChartContainer config={config} className="aspect-auto" style={fill(height)}>
